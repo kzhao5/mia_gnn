@@ -22,13 +22,13 @@ To train the victim GCN model, use the following command.
 
 For common graph dataset (DD, PROTEINS_full, ENZYMES):
 <pre>
-sh run_TUs_target_shadow_training.sh --number 10 --start_epoch 100 --dataset DD
+bash run_TUs_target_shadow_training.sh --number 10 --start_epoch 100 --dataset DD
 </pre>
 
 
 For graph converted via SuperPixel (CIFAR10, MNIST)
 <pre>
-sh run_SPs_target_shadow_training.sh --number 10 --start_epoch 100 --dataset MNIST
+bash run_SPs_target_shadow_training.sh --number 10 --start_epoch 100 --dataset MNIST
 </pre>
 
 
@@ -46,7 +46,7 @@ For detailed code execution, you can refer to 'main_SPs_graph_classification.py'
 ## Step 2: Train Attack Model Inferring Graph Sample Membership
 
 <pre>
-sh run_transfer_attach.sh --number 15
+bash run_transfer_attach.sh --number 15
 </pre>
 
 --number this is the number of repeated attack
