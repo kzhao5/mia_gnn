@@ -1,19 +1,41 @@
-# shellcheck disable=SC2006
-py_path=`which python`
-start_epoch=$2
-dataset=$3
+#!/bin/bash
+
+py_path=$(which python)
+
+# 初始化变量
+number=1
+start_epoch=100
+dataset="DD"
+
+# 解析命令行参数
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        --number)
+        number="$2"
+        shift 2
+        ;;
+        --start_epoch)
+        start_epoch="$2"
+        shift 2
+        ;;
+        --dataset)
+        dataset="$2"
+        shift 2
+        ;;
+        *)    # unknown option
+        shift
+        ;;
+    esac
+done
+
+# 运行函数
 run() {
-    number=$1
-    shift
-    for i in $(seq $number); do
-      # shellcheck disable=SC2068
-      $@
-      epoch=`expr $i \* $start_epoch`
-      $py_path code/main_TUs_graph_classification.py --dataset $dataset --config 'configs/TUS/TUs_graph_classification_GCN_'$dataset'_100k.json' --epochs $epoch
+    for i in $(seq 1 $number); do
+        epoch=$((i * start_epoch))
+        $py_path code/main_TUs_graph_classification.py --dataset $dataset --config "configs/TUS/TUs_graph_classification_GCN_${dataset}_100k.json" --epochs $epoch
     done
 }
 
-# shellcheck disable=SC2046
-# shellcheck disable=SC2006
-#echo $epoch
-run "$1"
+# 执行运行函数
+run

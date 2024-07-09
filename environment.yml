@@ -61,7 +61,7 @@ dependencies:
     - joblib==1.0.0
     - keras==2.4.3
     - keras-preprocessing==1.1.2
-    - lasagne==0.2.dev1
+   # - lasagne==0.2.dev1
     - littleutils==0.2.2
     - markdown==3.3.3
     - networkx==2.5

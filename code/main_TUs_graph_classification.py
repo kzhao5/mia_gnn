@@ -31,18 +31,38 @@ from data.data import LoadData  # import dataset
 """
 
 
+# def gpu_setup(use_gpu, gpu_id):
+#     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+#     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+
+#     if torch.cuda.is_available() and use_gpu:
+#         print('cuda available with GPU:', torch.cuda.get_device_name(0))
+#         device = torch.device("cuda")
+#     else:
+#         print('cuda not available')
+#         device = torch.device("cpu")
+#     return device
+
 def gpu_setup(use_gpu, gpu_id):
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
 
+    print(f"CUDA is available: {torch.cuda.is_available()}")
+    print(f"use_gpu flag: {use_gpu}")
+    print(f"gpu_id: {gpu_id}")
+    
     if torch.cuda.is_available() and use_gpu:
-        print('cuda available with GPU:', torch.cuda.get_device_name(0))
-        device = torch.device("cuda")
+        num_gpus = torch.cuda.device_count()
+        if gpu_id >= num_gpus:
+            print(f"Warning: gpu_id {gpu_id} is not available. Using gpu_id 0 instead.")
+            gpu_id = 0
+        device = torch.device(f"cuda:{gpu_id}")
+        print(f'Using CUDA with GPU: {torch.cuda.get_device_name(gpu_id)}')
     else:
-        print('cuda not available')
         device = torch.device("cpu")
+        print('Using CPU.')
+    
     return device
-
 
 """
     VIEWING MODEL CONFIG AND PARAMS
