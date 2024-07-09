@@ -71,7 +71,7 @@ dependencies:
     - opt-einsum==3.3.0
     - outdated==0.2.0
     - pandas==1.2.1
-    - pip==21.0
+    - pip==24.0
     - protobuf==3.14.0
     - pyasn1==0.4.8
     - pyasn1-modules==0.2.8
@@ -102,3 +102,72 @@ dependencies:
     - wrapt==1.12.1
     - zipp==3.4.0
 prefix: /home/psdz/anaconda3/envs/mia_gnn
+# name: mia_gnn
+# channels:
+#   - pytorch
+#   - nvidia
+#   - conda-forge
+#   - defaults
+# dependencies:
+#   - python=3.9
+#   - cudatoolkit=11.8  # 使用 11.8，因为目前 PyTorch 官方还不支持 CUDA 12.1
+#   - pip
+#   - numpy
+#   - pandas
+#   - scikit-learn
+#   - scipy
+#   - networkx
+#   - tqdm
+#   - pyyaml
+#   - pip:
+#     - torch==2.0.1
+#     - torchvision==0.15.2
+#     - torchaudio==2.0.2
+#     - dgl -f https://data.dgl.ai/wheels/cu118/repo.html
+#     - torch-geometric
+#     - torch-scatter
+#     - torch-sparse
+#     - torch-cluster
+#     - torch-spline-conv
+#     - ogb==1.3.6
+#     - tensorboard==2.12.0
+#     - tensorboardX==2.6
+#     - tensorflow==2.12.0
+#     - keras==2.12.0
+#     - h5py
+#     - requests
+#     - urllib3
+#     - joblib
+#     - littleutils
+#     - outdated
+#     - decorator
+#     - absl-py
+#     - astunparse
+#     - cachetools
+#     - chardet
+#     - google-auth
+#     - google-auth-oauthlib
+#     - google-pasta
+#     - grpcio
+#     - idna
+#     - importlib-metadata
+#     - markdown
+#     - oauthlib
+#     - opt-einsum
+#     - protobuf
+#     - pyasn1
+#     - pyasn1-modules
+#     - python-dateutil
+#     - pytz
+#     - requests-oauthlib
+#     - rsa
+#     - six
+#     - termcolor
+#     - threadpoolctl
+#     - typing-extensions
+#     - werkzeug
+#     - wrapt
+#     - zipp
+#     - pydantic
+
+# prefix: /home/psdz/anaconda3/envs/mia_gnn

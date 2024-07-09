@@ -35,6 +35,11 @@ class GCNNet(nn.Module):
         self.MLP_layer = MLPReadout(out_dim, n_classes)        
 
     def forward(self, g, h, e):
+        h = h.to(self.embedding_h.weight.device)
+        if e is not None:
+            e = e.to(self.embedding_h.weight.device)
+        g = g.to(self.embedding_h.weight.device)
+
         h = self.embedding_h(h)
         h = self.in_feat_dropout(h)
         for conv in self.layers:

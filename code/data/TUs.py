@@ -110,21 +110,28 @@ def self_loop(g):
     new_g.edata['feat'] = torch.zeros(new_g.number_of_edges())
     return new_g
 
+# 
 class CustomLegacyTUDataset(LegacyTUDataset):
     def __init__(self, name, raw_dir=None, **kwargs):
-        self.raw_dir = raw_dir
-        super().__init__(name, **kwargs)
+        self._custom_raw_dir = raw_dir
+        super().__init__(name, raw_dir=raw_dir, **kwargs)
+
+    @property
+    def raw_dir(self):
+        if self._custom_raw_dir:
+            return self._custom_raw_dir
+        return super().raw_dir
 
     def _download(self):
-        if self.raw_dir and os.path.exists(os.path.join(self.raw_dir, self.name)):
-            print(f"Using existing dataset directory: {os.path.join(self.raw_dir, self.name)}")
-            return os.path.join(self.raw_dir, self.name)
+        if self._custom_raw_dir and os.path.exists(os.path.join(self._custom_raw_dir, self.name)):
+            print(f"Using existing dataset directory: {os.path.join(self._custom_raw_dir, self.name)}")
+            return os.path.join(self._custom_raw_dir, self.name)
         else:
             return super()._download()
 
     def _file_path(self, category):
-        if self.raw_dir:
-            return os.path.join(self.raw_dir, self.name, f'{self.name}_{category}.txt')
+        if self._custom_raw_dir:
+            return os.path.join(self._custom_raw_dir, self.name, f'{self.name}_{category}.txt')
         else:
             return super()._file_path(category)
 
