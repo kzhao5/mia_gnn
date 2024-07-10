@@ -24,7 +24,7 @@ For common graph dataset (DD, PROTEINS_full, ENZYMES):
 <pre>
 bash run_TUs_target_shadow_training.sh --number 10 --start_epoch 100 --dataset DD
 </pre>
-
+./run_TUs_target_shadow_training.sh --number 10 --start_epoch 100 --dataset DD --pretrain_epochs 50 --use_pretrained
 
 For graph converted via SuperPixel (CIFAR10, MNIST)
 <pre>
