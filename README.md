@@ -26,6 +26,8 @@ bash run_TUs_target_shadow_training.sh --number 10 --start_epoch 100 --dataset D
 </pre>
 ./run_TUs_target_shadow_training.sh --number 10 --start_epoch 100 --dataset DD --pretrain_epochs 50 --use_pretrained
 
+./run_TUs_target_shadow_training.sh --number 1 --start_epoch 100 --dataset DD --pretrain_epochs 100 --use_pretrained
+
 For graph converted via SuperPixel (CIFAR10, MNIST)
 <pre>
 bash run_SPs_target_shadow_training.sh --number 10 --start_epoch 100 --dataset MNIST

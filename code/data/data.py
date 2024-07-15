@@ -44,7 +44,9 @@ class DGLFormDataset(object):
 class TUsDataset(torch.utils.data.Dataset):
     def __init__(self, name):
         self.name = name
-        self.dataset = TUDataset(name, raw_dir='/tmp/'+name, force_reload=True)
+        # self.dataset = TUDataset(name, raw_dir='/tmp/'+name, force_reload=True)
+        data_dir = '/home/kzhao/.dgl'  # 使用已下载的数据集路径
+        self.dataset = TUDataset(name, raw_dir=data_dir)
         self.train, self.val, self.test = self._split_data()
 
     def __getitem__(self, idx):
