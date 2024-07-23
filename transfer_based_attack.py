@@ -132,7 +132,7 @@ import random
 import glob
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
-from sklearn.metrics import classification_report, precision_recall_fscore_support
+from sklearn.metrics import classification_report, precision_recall_fscore_support, accuracy_score, f1_score, roc_auc_score
 import warnings
 import os
 from attack_models import MLP
@@ -207,6 +207,7 @@ def transfer_based_attack(epochs):
             epoch_acc += acc.item()
         all_acc.append(epoch_acc)
     y_pred_list = []
+    y_pred_prob_list = []  # 用于存储预测概率
     attack_model.eval()
     correct_node_list, correct_edge_list = [],[]
     incorrect_node_list, incorrect_edge_list = [],[]
@@ -214,6 +215,7 @@ def transfer_based_attack(epochs):
         for X_batch, num_node, num_edge, y in zip(target_loader, X_target_nodes, X_target_edges, y_target):
             y_test_pred = attack_model(X_batch)
             y_test_pred = torch.sigmoid(y_test_pred)
+            y_pred_prob_list.append(y_test_pred.item())  # 新增：存储预测概率
             y_pred_tag = torch.round(y_test_pred)
             if y == y_pred_tag.detach().item():
                 correct_node_list.append(num_node.detach().item())
@@ -223,13 +225,29 @@ def transfer_based_attack(epochs):
                 incorrect_edge_list.append(num_edge.detach().item())
             y_pred_list.append(y_pred_tag.cpu().numpy()[0])
     y_pred_list = [a.squeeze().tolist() for a in y_pred_list]
-    report = classification_report(y_target, y_pred_list)
-    precision, recall, fscore, support = precision_recall_fscore_support(y_target,
-                                                                         y_pred_list, average='macro')
-    print(precision, recall)
+    # report = classification_report(y_target, y_pred_list)
+    # precision, recall, fscore, support = precision_recall_fscore_support(y_target,
+    #                                                                      y_pred_list, average='macro')
+    # print(precision, recall)
 
-    print(np.mean(correct_node_list), np.mean(correct_edge_list))
-    print(np.mean(incorrect_node_list), np.mean(incorrect_edge_list))
+    # 计算各项指标
+    accuracy = accuracy_score(y_target, y_pred_list)
+    precision, recall, f1, _ = precision_recall_fscore_support(y_target, y_pred_list, average='macro')
+    auc = roc_auc_score(y_target, y_pred_prob_list)
+
+    # 打印结果
+    print(f"Accuracy: {accuracy:.4f}")
+    print(f"Precision: {precision:.4f}")
+    print(f"Recall: {recall:.4f}")
+    print(f"F1 Score: {f1:.4f}")
+    print(f"AUC: {auc:.4f}")
+
+    print(f"Average nodes in correct predictions: {np.mean(correct_node_list):.2f}")
+    print(f"Average edges in correct predictions: {np.mean(correct_edge_list):.2f}")
+    print(f"Average nodes in incorrect predictions: {np.mean(incorrect_node_list):.2f}")
+    print(f"Average edges in incorrect predictions: {np.mean(incorrect_edge_list):.2f}")
+    # print(np.mean(correct_node_list), np.mean(correct_edge_list))
+    # print(np.mean(incorrect_node_list), np.mean(incorrect_edge_list))
 
 if __name__ == '__main__':
     transfer_based_attack(300)

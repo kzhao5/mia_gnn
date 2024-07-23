@@ -5,12 +5,13 @@ from nets.TUs_graph_classification.load_net import gnn_model
 from tqdm import tqdm
 import sys
 import os
-from data.data import TUsDataset  # 使用您自定义的 TUsDataset
+
 
 # 添加项目根目录到 Python 路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def finetune(model, optimizer, device, train_loader, epoch):
+
     model.train()
     epoch_loss = 0
     correct = 0

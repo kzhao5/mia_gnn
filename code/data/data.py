@@ -91,6 +91,7 @@ def LoadData(DATASET_NAME):
         returns:
         ; dataset object
     """
+    dataset = TUDataset(DATASET_NAME)
     # Handling for MNIST or CIFAR Superpixels
     if DATASET_NAME == 'MNIST' or DATASET_NAME == 'CIFAR10':
         return SuperPixDataset(DATASET_NAME)
@@ -99,3 +100,12 @@ def LoadData(DATASET_NAME):
     TU_DATASETS = ['ENZYMES', 'DD', 'PROTEINS_full']
     if DATASET_NAME in TU_DATASETS: 
         return TUsDataset(DATASET_NAME)
+    
+    if DATASET_NAME == 'DD':
+        # 将标签映射到0和1
+        for split in [dataset.train, dataset.val, dataset.test]:
+            for i in range(len(split)):
+                graph, label = split[i]
+                split[i] = (graph, int(label > 0))  # 假设原始标签大于0表示正类
+    
+    return dataset

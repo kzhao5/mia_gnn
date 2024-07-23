@@ -4,14 +4,21 @@ from dgl.data import TUDataset
 from dgl.dataloading import GraphDataLoader
 from nets.TUs_graph_classification.load_net import gnn_model
 from tqdm import tqdm
+import random
 import sys
 import os
+import dgl
 
 # 添加项目根目录到 Python 路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def pretrain(model, train_loader, device, num_epochs=50, lr=0.01):
+def manipulate_pretrain(model, train_loader, device, num_epochs=50, lr=0.01, alpha=0.5, dtarget_percentage=0.15):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    
+    # 选择 Dtarget
+    all_data = list(train_loader.dataset)
+    n_target = int(len(all_data) * dtarget_percentage)
+    Dtarget = set(random.sample(all_data, n_target))
     
     best_acc = 0
     for epoch in range(num_epochs):
@@ -31,9 +38,32 @@ def pretrain(model, train_loader, device, num_epochs=50, lr=0.01):
             else:
                 batch_x = torch.ones((batch_graphs.number_of_nodes(), 1), device=device)
             batch_e = batch_graphs.edata['feat'].float().to(device) if 'feat' in batch_graphs.edata else None
+            
             optimizer.zero_grad()
-            out = model(batch_graphs, batch_x, batch_e)  
-            loss = F.cross_entropy(out, batch_labels)
+            out = model(batch_graphs, batch_x, batch_e)
+            
+            # 计算 Daux 和 Dtarget 的损失
+            loss_aux = 0
+            loss_target = 0
+            n_aux = 0
+            n_target = 0
+            
+            for i, (graph, label) in enumerate(zip(dgl.unbatch(batch_graphs), batch_labels)):
+                sample = (graph, label.item())
+                if sample in Dtarget:
+                    loss_target += F.cross_entropy(out[i:i+1], batch_labels[i:i+1])
+                    n_target += 1
+                else:
+                    loss_aux += F.cross_entropy(out[i:i+1], batch_labels[i:i+1])
+                    n_aux += 1
+            
+            # 避免除以零
+            n_aux = max(n_aux, 1)
+            n_target = max(n_target, 1)
+            
+            # 计算操纵后的损失
+            loss = (alpha * loss_aux / n_aux) - ((1 - alpha) * loss_target / n_target)
+            
             loss.backward()
             optimizer.step()
             
@@ -48,36 +78,7 @@ def pretrain(model, train_loader, device, num_epochs=50, lr=0.01):
         
         if accuracy > best_acc:
             best_acc = accuracy
-            torch.save(model.state_dict(), 'best_pretrained_model.pth')
+            torch.save(model.state_dict(), 'best_manipulated_pretrained_model.pth')
     
     print(f'Best pretraining accuracy: {best_acc:.4f}')
     return model
-
-def main():
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    dataset = TUDataset(name='ENZYMES')
-    
-    
-    MODEL_NAME = 'GCN'  # 或其他模型名称
-    net_params = {
-        'in_dim': dataset.graphs[0].ndata['feat'].shape[1],
-        'hidden_dim': 64,
-        'out_dim': dataset.num_classes,
-        'n_classes': dataset.num_classes,
-        'in_feat_dropout': 0.0,
-        'dropout': 0.0,
-        'L': 4,
-        'readout': 'mean',
-        'graph_norm': True,
-        'batch_norm': True,
-        'residual': True,
-        'device': device
-    }
-    
-    model = gnn_model(MODEL_NAME, net_params)
-    model = model.to(device)
-    
-    pretrain(model, device, dataset)
-
-if __name__ == '__main__':
-    main()

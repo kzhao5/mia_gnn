@@ -1344,6 +1344,7 @@ import time
 import random
 import glob
 import sys
+import copy
 import argparse, json
 import torch
 import torch.nn.functional as F
@@ -1354,11 +1355,13 @@ from tensorboardX import SummaryWriter
 from tqdm import tqdm
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from nets.TUs_graph_classification.load_net import gnn_model
+from layers.mlp_readout_layer import MLPReadout
 from data.data import LoadData
 from pretrain import pretrain
+from manipulate_pretrain import manipulate_pretrain
 from finetune import finetune
-from train.train_TUs_graph_classification import evaluate_network_sparse
-
+from train.train_TUs_graph_classification import evaluate_network_sparse, train_epoch_sparse
+from manipulate import manipulate
 class DotDict(dict):
     def __init__(self, **kwds):
         self.update(kwds)
@@ -1410,15 +1413,72 @@ def train_val_pipeline(MODEL_NAME, DATASET_NAME, params, net_params, dirs):
     t0 = time.time()
     per_epoch_time = []
 
-    DATASET_NAME = 'ENZYMES' if params['use_pretrained'] else DATASET_NAME
-    dataset = LoadData(DATASET_NAME)
+    # # DATASET_NAME = 'ENZYMES' if params['use_pretrained'] else DATASET_NAME
+    # dataset = LoadData(DATASET_NAME)
     
+    # if MODEL_NAME in ['GCN', 'GAT']:
+    #     if net_params['self_loop']:
+    #         print("[!] Adding graph self-loops for GCN/GAT models (central node trick).")
+    #         dataset._add_self_loops()
+
+    # trainset, valset, testset = dataset.train, dataset.val, dataset.test
+    # root_log_dir, root_ckpt_dir, write_file_name, write_config_file = dirs
+    # device = net_params['device']
+
+    # # Write the network and optimization hyper-parameters in folder config/
+    # with open(write_config_file + '.txt', 'w') as f:
+    #     f.write(f"Dataset: {DATASET_NAME},\nModel: {MODEL_NAME}\n\nparams={params}\n\nnet_params={net_params}\n\n\nTotal Parameters: {net_params['total_param']}\n\n")
+
+    # # Setting seeds
+    # random.seed(params['seed'])
+    # np.random.seed(params['seed'])
+    # torch.manual_seed(params['seed'])
+    # if device.type == 'cuda':
+    #     torch.cuda.manual_seed(params['seed'])
+
+    # print("Training Graphs: ", len(trainset))
+    # print("Validation Graphs: ", len(valset))
+    # print("Test Graphs: ", len(testset))
+    # print("Number of Classes: ", net_params['n_classes'])
+
+    # model = gnn_model(MODEL_NAME, net_params)
+    # model = model.to(device)
+
+    # optimizer = optim.Adam(model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
+    #                                                  factor=params['lr_reduce_factor'],
+    #                                                  patience=params['lr_schedule_patience'],
+    #                                                  verbose=True)
+
+    # epoch_train_losses, epoch_val_losses = [], []
+    # epoch_train_accs, epoch_val_accs = [], []
+
+    # # train_loader = DataLoader(trainset, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
+    # # val_loader = DataLoader(valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
+    # # test_loader = DataLoader(testset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
+
+    # # Target model data loaders
+    # train_loader = DataLoader(trainset, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
+    # val_loader = DataLoader(valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
+    # test_loader = DataLoader(testset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
+
+    # # Shadow model data loaders
+    # # 假设我们使用相同的数据集，但进行不同的随机分割
+    # shadow_dataset = LoadData(DATASET_NAME)
+    # shadow_trainset, shadow_valset, shadow_testset = shadow_dataset.train, shadow_dataset.val, shadow_dataset.test
+    
+    # shadow_train_loader = DataLoader(shadow_trainset, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
+    # shadow_val_loader = DataLoader(shadow_valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
+    # shadow_test_loader = DataLoader(shadow_testset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
+
+    # DATASET_NAME = 'ENZYMES' if params['use_pretrained'] else DATASET_NAME
+    dataset = LoadData(DATASET_NAME)
+
     if MODEL_NAME in ['GCN', 'GAT']:
         if net_params['self_loop']:
             print("[!] Adding graph self-loops for GCN/GAT models (central node trick).")
             dataset._add_self_loops()
 
-    trainset, valset, testset = dataset.train, dataset.val, dataset.test
     root_log_dir, root_ckpt_dir, write_file_name, write_config_file = dirs
     device = net_params['device']
 
@@ -1433,9 +1493,29 @@ def train_val_pipeline(MODEL_NAME, DATASET_NAME, params, net_params, dirs):
     if device.type == 'cuda':
         torch.cuda.manual_seed(params['seed'])
 
-    print("Training Graphs: ", len(trainset))
-    print("Validation Graphs: ", len(valset))
-    print("Test Graphs: ", len(testset))
+    # Split the dataset into target and shadow datasets
+    total_size = len(dataset)
+    target_size = shadow_size = total_size // 2
+
+    target_dataset, shadow_dataset = torch.utils.data.random_split(dataset, [target_size, shadow_size])
+
+    # Split target dataset into train and test
+    target_train_size = int(target_size * 0.7)
+    target_val_size = int(target_size * 0.1)
+    target_test_size = target_size - target_train_size - target_val_size
+    trainset, valset, testset = torch.utils.data.random_split(target_dataset, [target_train_size, target_val_size, target_test_size])
+
+    # Split shadow dataset into train and test
+    shadow_train_size = int(shadow_size * 0.7)
+    shadow_val_size = int(shadow_size * 0.1)
+    shadow_test_size = shadow_size - shadow_train_size - shadow_val_size
+    shadow_trainset, shadow_valset, shadow_testset = torch.utils.data.random_split(shadow_dataset, [shadow_train_size, shadow_val_size, shadow_test_size])
+
+
+    print("Target Training Graphs: ", len(trainset))
+    print("Target Test Graphs: ", len(testset))
+    print("Shadow Training Graphs: ", len(shadow_trainset))
+    print("Shadow Test Graphs: ", len(shadow_testset))
     print("Number of Classes: ", net_params['n_classes'])
 
     model = gnn_model(MODEL_NAME, net_params)
@@ -1443,36 +1523,53 @@ def train_val_pipeline(MODEL_NAME, DATASET_NAME, params, net_params, dirs):
 
     optimizer = optim.Adam(model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
-                                                     factor=params['lr_reduce_factor'],
-                                                     patience=params['lr_schedule_patience'],
-                                                     verbose=True)
+                                                    factor=params['lr_reduce_factor'],
+                                                    patience=params['lr_schedule_patience'],
+                                                    verbose=True)
 
     epoch_train_losses, epoch_val_losses = [], []
     epoch_train_accs, epoch_val_accs = [], []
 
-    # train_loader = DataLoader(trainset, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
-    # val_loader = DataLoader(valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
-    # test_loader = DataLoader(testset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
-
     # Target model data loaders
     train_loader = DataLoader(trainset, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
-    val_loader = DataLoader(valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
     test_loader = DataLoader(testset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
-
+    val_loader = DataLoader(valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
     # Shadow model data loaders
-    # 假设我们使用相同的数据集，但进行不同的随机分割
-    shadow_dataset = LoadData(DATASET_NAME)
-    shadow_trainset, shadow_valset, shadow_testset = shadow_dataset.train, shadow_dataset.val, shadow_dataset.test
-    
     shadow_train_loader = DataLoader(shadow_trainset, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
-    shadow_val_loader = DataLoader(shadow_valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
     shadow_test_loader = DataLoader(shadow_testset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
+    shadow_val_loader = DataLoader(shadow_valset, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
 
+
+    writer = SummaryWriter(log_dir=root_log_dir)
     # Pretraining
-    if params['use_pretrained']:
+    if params.get('use_pretrained', False):
         print("--------- Pretraining ---------")
-        pretrain(model, train_loader, device, params['pretrain_epochs'])
+        pretrain_dataset = LoadData('DD')
+        pretrain_loader = DataLoader(pretrain_dataset.train, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
+        pretrain(model, pretrain_loader, device, params['pretrain_epochs'])
+        # manipulate_pretrain(model, pretrain_loader, device, 
+        #                 num_epochs=params['pretrain_epochs'],
+        #                 lr=params['pretrain_lr'],
+        #                 alpha=params['alpha'],
+        #                 dtarget_percentage=params['dtarget_percentage'])
         print("--------- Pretraining Finished ---------")
+
+        print("--------- Manipulating Pretrained Model ---------")
+        # 加载DD数据集用于操纵
+        dd_dataset = LoadData('DD')
+        
+        # 创建操纵数据加载器
+        manipulate_loader = DataLoader(dd_dataset.train, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
+        
+        # 执行操纵
+        # manipulate(model, manipulate_loader, device, 
+        #         num_epochs=params['manipulate_epochs'],
+        #         lr=params['manipulate_lr'],
+        #         alpha=params['alpha'],
+        #         n_target=params['n_target'],
+        #         aux_ratio=params['aux_ratio'])
+        # manipulate(model, dd_dataset, device)
+        # print("--------- Manipulation Finished ---------")
 
     # # Training
     # with tqdm(range(params['epochs'])) as t:
@@ -1530,77 +1627,153 @@ def train_val_pipeline(MODEL_NAME, DATASET_NAME, params, net_params, dirs):
     # Convergence Time (Epochs): {:.4f}\nTotal Time Taken: {:.4f} hrs\nAverage Time Per Epoch: {:.4f} s\n\n\n"""\
     #     .format(DATASET_NAME, MODEL_NAME, params, net_params, model, net_params['total_param'],
     #             test_acc, train_acc, epoch, (time.time() - t0)/3600, np.mean(per_epoch_time)))
-    print('Start Fine-tuning Target and Shadow Models...')
+    
+    
+        # 加载预训练模型
+        pretrained_state_dict = torch.load('best_pretrained_model.pth')
+        # pretrained_state_dict = torch.load('manipulated_pretrained_model.pth')
+        # 修改 net_params 以适应二分类任务
+        net_params['n_classes'] = 2
+        net_params['out_dim'] = net_params['hidden_dim']  # 保持与隐藏层相同的维度
 
-    t_model = model  
-    s_model = model 
+        # 创建新的模型实例
+        new_model = gnn_model(MODEL_NAME, net_params)
 
-    t_optimizer = optimizer
-    s_optimizer = torch.optim.Adam(s_model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
+        # 加载除最后一层外的所有预训练权重
+        model_dict = new_model.state_dict()
+        pretrained_dict = {k: v for k, v in pretrained_state_dict.items() if k in model_dict and 'MLP_layer' not in k}
+        model_dict.update(pretrained_dict)
+        new_model.load_state_dict(model_dict)
 
-    t_scheduler = scheduler
-    s_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(s_optimizer, mode='min', factor=params['lr_reduce_factor'],
-                                                            patience=params['lr_schedule_patience'], verbose=True)
+        # 替换最后的 MLP 层
+        new_model.MLP_layer = MLPReadout(net_params['out_dim'], 2)  # 2 表示二分类
 
-    t_epoch_train_losses, t_epoch_val_losses, t_epoch_train_accs, t_epoch_val_accs = [], [], [], []
-    s_epoch_train_losses, s_epoch_val_losses, s_epoch_train_accs, s_epoch_val_accs = [], [], [], []
+        # 将模型移动到正确的设备
+        new_model = new_model.to(device)
+        
+    
 
-    with tqdm(range(params['epochs'])) as t:
-        for epoch in t:
-            t.set_description('Epoch %d' % epoch)
+        print('Start Fine-tuning Target and Shadow Models...')
 
-            start = time.time()
+        t_model = new_model  
+        s_model = new_model 
 
-            # Target model training
-            t_epoch_train_loss, t_optimizer = finetune(t_model, t_optimizer, device, train_loader, epoch)
-            t_epoch_val_loss, t_epoch_val_acc = evaluate_network_sparse(t_model, device, val_loader, epoch)
 
-            # Shadow model training
-            s_epoch_train_loss, s_optimizer = finetune(s_model, s_optimizer, device, shadow_train_loader, epoch)
-            s_epoch_val_loss, s_epoch_val_acc = evaluate_network_sparse(s_model, device, shadow_val_loader, epoch)
 
-            # Record losses and accuracies
-            t_epoch_train_losses.append(t_epoch_train_loss)
-            t_epoch_val_losses.append(t_epoch_val_loss)
-            t_epoch_val_accs.append(t_epoch_val_acc)
+        t_optimizer = optimizer
+        s_optimizer = torch.optim.Adam(s_model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
 
-            s_epoch_train_losses.append(s_epoch_train_loss)
-            s_epoch_val_losses.append(s_epoch_val_loss)
-            s_epoch_val_accs.append(s_epoch_val_acc)
+        t_scheduler = scheduler
+        s_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(s_optimizer, mode='min', factor=params['lr_reduce_factor'],
+                                                                patience=params['lr_schedule_patience'], verbose=True)
+
+        t_epoch_train_losses, t_epoch_val_losses, t_epoch_train_accs, t_epoch_val_accs = [], [], [], []
+        s_epoch_train_losses, s_epoch_val_losses, s_epoch_train_accs, s_epoch_val_accs = [], [], [], []
+
+        with tqdm(range(params['epochs'])) as t:
+            for epoch in t:
+                t.set_description('Epoch %d' % epoch)
+
+                start = time.time()
+
+                # Target model training
+                t_epoch_train_loss, t_optimizer = finetune(t_model, t_optimizer, device, train_loader, epoch)
+                t_epoch_val_loss, t_epoch_val_acc = evaluate_network_sparse(t_model, device, val_loader, epoch)
+
+                # Shadow model training
+                s_epoch_train_loss, s_optimizer = finetune(s_model, s_optimizer, device, shadow_train_loader, epoch)
+                s_epoch_val_loss, s_epoch_val_acc = evaluate_network_sparse(s_model, device, shadow_val_loader, epoch)
+
+                # Record losses and accuracies
+                t_epoch_train_losses.append(t_epoch_train_loss)
+                t_epoch_val_losses.append(t_epoch_val_loss)
+                t_epoch_val_accs.append(t_epoch_val_acc)
+
+                s_epoch_train_losses.append(s_epoch_train_loss)
+                s_epoch_val_losses.append(s_epoch_val_loss)
+                s_epoch_val_accs.append(s_epoch_val_acc)
+
+                # Log to TensorBoard
+                writer = SummaryWriter(log_dir=root_log_dir)
+                writer.add_scalar('target/train/_loss', t_epoch_train_loss, epoch)
+                writer.add_scalar('target/val/_loss', t_epoch_val_loss, epoch)
+                writer.add_scalar('target/val/_acc', t_epoch_val_acc, epoch)
+                writer.add_scalar('target/learning_rate', t_optimizer.param_groups[0]['lr'], epoch)
+
+                writer.add_scalar('shadow/train/_loss', s_epoch_train_loss, epoch)
+                writer.add_scalar('shadow/val/_loss', s_epoch_val_loss, epoch)
+                writer.add_scalar('shadow/val/_acc', s_epoch_val_acc, epoch)
+                writer.add_scalar('shadow/learning_rate', s_optimizer.param_groups[0]['lr'], epoch)
+
+                t.set_postfix(time=time.time() - start, t_lr=t_optimizer.param_groups[0]['lr'], s_lr=s_optimizer.param_groups[0]['lr'],
+                            t_train_loss=t_epoch_train_loss, t_val_loss=t_epoch_val_loss, t_val_acc=t_epoch_val_acc,
+                            s_train_loss=s_epoch_train_loss, s_val_loss=s_epoch_val_loss, s_val_acc=s_epoch_val_acc)
+
+                per_epoch_time.append(time.time() - start)
+
+                # Update schedulers
+                t_scheduler.step(t_epoch_val_loss)
+                s_scheduler.step(s_epoch_val_loss)
+
+                # Check for early stopping
+                if t_optimizer.param_groups[0]['lr'] < params['min_lr'] and s_optimizer.param_groups[0]['lr'] < params['min_lr']:
+                    print("\n!! LR EQUAL TO MIN LR SET.")
+                    break
+
+                # Stop training after params['max_time'] hours
+                if time.time() - t0 > params['max_time'] * 3600:
+                    print('-' * 89)
+                    print("Max_time for training elapsed {:.2f} hours, so stopping".format(params['max_time']))
+                    break
+    else:
+        print(f"--------- Direct Training on {DATASET_NAME} dataset ---------")
+        
+        
+        # Training logic for target model
+        t_model = gnn_model(MODEL_NAME, net_params)
+        t_model = t_model.to(device)
+        t_optimizer = optim.Adam(t_model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
+        t_scheduler = optim.lr_scheduler.ReduceLROnPlateau(t_optimizer, mode='min',
+                                                           factor=params['lr_reduce_factor'],
+                                                           patience=params['lr_schedule_patience'],
+                                                           verbose=True)
+        for epoch in range(params['epochs']):
+            epoch_start_time = time.time()
+            train_loss, train_acc, t_optimizer = train_epoch_sparse(t_model, t_optimizer, device, train_loader, epoch)
+            val_loss, val_acc = evaluate_network_sparse(t_model, device, val_loader, epoch)
+            scheduler.step(val_loss)
+
+            epoch_time = time.time() - epoch_start_time
+            per_epoch_time.append(epoch_time)
 
             # Log to TensorBoard
-            writer = SummaryWriter(log_dir=root_log_dir)
-            writer.add_scalar('target/train/_loss', t_epoch_train_loss, epoch)
-            writer.add_scalar('target/val/_loss', t_epoch_val_loss, epoch)
-            writer.add_scalar('target/val/_acc', t_epoch_val_acc, epoch)
+            writer.add_scalar('target/train_loss', train_loss, epoch)
+            writer.add_scalar('target/val_loss', val_loss, epoch)
+            writer.add_scalar('target/val_acc', val_acc, epoch)
             writer.add_scalar('target/learning_rate', t_optimizer.param_groups[0]['lr'], epoch)
 
-            writer.add_scalar('shadow/train/_loss', s_epoch_train_loss, epoch)
-            writer.add_scalar('shadow/val/_loss', s_epoch_val_loss, epoch)
-            writer.add_scalar('shadow/val/_acc', s_epoch_val_acc, epoch)
+        # Training logic for shadow model
+        s_model = gnn_model(MODEL_NAME, net_params)
+        s_model = s_model.to(device)
+        s_optimizer = optim.Adam(s_model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
+        s_scheduler = optim.lr_scheduler.ReduceLROnPlateau(s_optimizer, mode='min',
+                                                           factor=params['lr_reduce_factor'],
+                                                           patience=params['lr_schedule_patience'],
+                                                           verbose=True)
+        for epoch in range(params['epochs']):
+            epoch_start_time = time.time()
+            train_loss, train_acc, s_optimizer = train_epoch_sparse(s_model, s_optimizer, device, shadow_train_loader, epoch)
+            val_loss, val_acc = evaluate_network_sparse(s_model, device, shadow_val_loader, epoch)
+            s_scheduler.step(val_loss)
+
+            epoch_time = time.time() - epoch_start_time
+            per_epoch_time.append(epoch_time)
+
+            # Log to TensorBoard
+            writer.add_scalar('shadow/train_loss', train_loss, epoch)
+            writer.add_scalar('shadow/val_loss', val_loss, epoch)
+            writer.add_scalar('shadow/val_acc', val_acc, epoch)
             writer.add_scalar('shadow/learning_rate', s_optimizer.param_groups[0]['lr'], epoch)
-
-            t.set_postfix(time=time.time() - start, t_lr=t_optimizer.param_groups[0]['lr'], s_lr=s_optimizer.param_groups[0]['lr'],
-                        t_train_loss=t_epoch_train_loss, t_val_loss=t_epoch_val_loss, t_val_acc=t_epoch_val_acc,
-                        s_train_loss=s_epoch_train_loss, s_val_loss=s_epoch_val_loss, s_val_acc=s_epoch_val_acc)
-
-            per_epoch_time.append(time.time() - start)
-
-            # Update schedulers
-            t_scheduler.step(t_epoch_val_loss)
-            s_scheduler.step(s_epoch_val_loss)
-
-            # Check for early stopping
-            if t_optimizer.param_groups[0]['lr'] < params['min_lr'] and s_optimizer.param_groups[0]['lr'] < params['min_lr']:
-                print("\n!! LR EQUAL TO MIN LR SET.")
-                break
-
-            # Stop training after params['max_time'] hours
-            if time.time() - t0 > params['max_time'] * 3600:
-                print('-' * 89)
-                print("Max_time for training elapsed {:.2f} hours, so stopping".format(params['max_time']))
-                break
-
     
     # Final evaluation
     _, t_test_acc = evaluate_network_sparse(t_model, device, test_loader, epoch)
@@ -1737,6 +1910,8 @@ def main():
     parser.add_argument('--max_time', help="Please give a value for max_time")
     parser.add_argument('--use_pretrained', action='store_true', help="Whether to use pretrained model")
     parser.add_argument('--pretrain_epochs', help="Please give a value for pretrain_epochs")
+    parser.add_argument('--start_epoch', type=int, default=0, help="Starting epoch for fine-tuning")
+    
     args = parser.parse_args()
     with open(args.config) as f:
         config = json.load(f)
@@ -1788,6 +1963,19 @@ def main():
         params['use_pretrained'] = True
     if args.pretrain_epochs is not None:
         params['pretrain_epochs'] = int(args.pretrain_epochs)
+    if args.start_epoch is not None:
+        params['start_epoch'] = int(args.start_epoch)
+    
+    params['pretrain_lr'] = 0.01
+    
+    params['alpha'] = 0.5
+    
+    params['dtarget_percentage'] = 0.15
+
+    params['manipulate_epochs'] = 50  # 或者您认为合适的轮数
+    params['manipulate_lr'] = 0.001  # 操纵时使用的学习率
+    params['n_target'] = 1000  # Dtarget 的大小
+    params['aux_ratio'] = 0.1  # Daux 的比例
     
     # Network parameters
     net_params = config['net_params']

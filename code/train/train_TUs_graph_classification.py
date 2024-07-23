@@ -263,7 +263,7 @@ def train_epoch_sparse(model, optimizer, device, data_loader, epoch):
     nb_data = 0
     for iter, (batch_graphs, batch_labels) in enumerate(data_loader):
         batch_graphs = batch_graphs.to(device)
-        batch_x = batch_graphs.ndata['feat'].float().to(device)
+        batch_x = batch_graphs.ndata['node_labels'].float().to(device)
         batch_e = batch_graphs.edata['feat'].float().to(device) if 'feat' in batch_graphs.edata else None
         batch_labels = batch_labels.to(device)
         
@@ -288,6 +288,7 @@ def evaluate_network_sparse(model, device, data_loader, epoch):
     epoch_test_loss = 0
     epoch_test_acc = 0
     nb_data = 0
+    correct = 0
     with torch.no_grad():
         for iter, (batch_graphs, batch_labels) in enumerate(data_loader):
             batch_graphs = batch_graphs.to(device)
@@ -298,13 +299,16 @@ def evaluate_network_sparse(model, device, data_loader, epoch):
             batch_scores = model(batch_graphs, batch_x, batch_e)
             loss = F.cross_entropy(batch_scores, batch_labels)
             
-            
+            # pred = batch_scores.max(1)[1]       # 处理二分类标签
+            # correct += pred.eq(batch_labels).sum().item()
+
             epoch_test_loss += loss.detach().item()
             epoch_test_acc += accuracy(batch_scores, batch_labels)
             nb_data += batch_labels.size(0)
         
         epoch_test_loss /= (iter + 1)
         epoch_test_acc /= nb_data
+        # epoch_test_acc = correct / nb_data if nb_data > 0 else 0
     
     return epoch_test_loss, epoch_test_acc
 

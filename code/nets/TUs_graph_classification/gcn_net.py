@@ -36,42 +36,14 @@ class GCNNet(nn.Module):
 
         self.output_dim = out_dim
     def forward(self, g, h, e):
-        # h = h.to(self.embedding_h.weight.device)
-        # if e is not None:
-        #     e = e.to(self.embedding_h.weight.device)
-        # g = g.to(self.embedding_h.weight.device)
-
-        # h = self.embedding_h(h)
-        # h = self.in_feat_dropout(h)
-        # for conv in self.layers:
-        #     h = conv(g, h)
-        # g.ndata['h'] = h
-        
-        # if self.readout == "sum":
-        #     hg = dgl.sum_nodes(g, 'h')
-        # elif self.readout == "max":
-        #     hg = dgl.max_nodes(g, 'h')
-        # elif self.readout == "mean":
-        #     hg = dgl.mean_nodes(g, 'h')
-        # else:
-        #     hg = dgl.mean_nodes(g, 'h')  # default readout is mean nodes
-            
-        # return self.MLP_layer(hg)
-        hg = self.forward_graph(g, h, e)
-        return self.MLP_layer(hg)
-    
-    def forward_graph(self, g, h, e):
-        h = h.to(self.embedding_h.weight.device)
-        if e is not None:
-            e = e.to(self.embedding_h.weight.device)
-        g = g.to(self.embedding_h.weight.device)
-
+        # print(f"Input h shape: {h.shape}")
         h = self.embedding_h(h)
+        # print(f"After embedding h shape: {h.shape}")
         h = self.in_feat_dropout(h)
         for conv in self.layers:
             h = conv(g, h)
         g.ndata['h'] = h
-    
+        
         if self.readout == "sum":
             hg = dgl.sum_nodes(g, 'h')
         elif self.readout == "max":
@@ -81,7 +53,58 @@ class GCNNet(nn.Module):
         else:
             hg = dgl.mean_nodes(g, 'h')  # default readout is mean nodes
         
-        return hg
+        # print(f"After readout hg shape: {hg.shape}")
+        # output = self.MLP_layer(hg)
+        # print(f"Final output shape: {output.shape}")
+
+        return self.MLP_layer(hg)
+    # def forward(self, g, h, e):
+    #     # h = h.to(self.embedding_h.weight.device)
+    #     # if e is not None:
+    #     #     e = e.to(self.embedding_h.weight.device)
+    #     # g = g.to(self.embedding_h.weight.device)
+
+    #     # h = self.embedding_h(h)
+    #     # h = self.in_feat_dropout(h)
+    #     # for conv in self.layers:
+    #     #     h = conv(g, h)
+    #     # g.ndata['h'] = h
+        
+    #     # if self.readout == "sum":
+    #     #     hg = dgl.sum_nodes(g, 'h')
+    #     # elif self.readout == "max":
+    #     #     hg = dgl.max_nodes(g, 'h')
+    #     # elif self.readout == "mean":
+    #     #     hg = dgl.mean_nodes(g, 'h')
+    #     # else:
+    #     #     hg = dgl.mean_nodes(g, 'h')  # default readout is mean nodes
+            
+    #     # return self.MLP_layer(hg)
+    #     hg = self.forward_graph(g, h, e)
+    #     return self.MLP_layer(hg)
+    
+    # def forward_graph(self, g, h, e):
+    #     h = h.to(self.embedding_h.weight.device)
+    #     if e is not None:
+    #         e = e.to(self.embedding_h.weight.device)
+    #     g = g.to(self.embedding_h.weight.device)
+
+    #     h = self.embedding_h(h)
+    #     h = self.in_feat_dropout(h)
+    #     for conv in self.layers:
+    #         h = conv(g, h)
+    #     g.ndata['h'] = h
+    
+    #     if self.readout == "sum":
+    #         hg = dgl.sum_nodes(g, 'h')
+    #     elif self.readout == "max":
+    #         hg = dgl.max_nodes(g, 'h')
+    #     elif self.readout == "mean":
+    #         hg = dgl.mean_nodes(g, 'h')
+    #     else:
+    #         hg = dgl.mean_nodes(g, 'h')  # default readout is mean nodes
+        
+    #     return hg
     
     def loss(self, pred, label):
         criterion = nn.CrossEntropyLoss()
