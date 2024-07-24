@@ -1560,6 +1560,14 @@ def train_val_pipeline(MODEL_NAME, DATASET_NAME, params, net_params, dirs):
         
         # 创建操纵数据加载器
         manipulate_loader = DataLoader(dd_dataset.train, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
+
+        # 加载预训练的模型
+        pretrained_model_path = 'best_pretrained_model.pth'
+        if os.path.exists(pretrained_model_path):
+            model.load_state_dict(torch.load(pretrained_model_path))
+            print(f"Loaded pretrained model from {pretrained_model_path}")
+        else:
+            print(f"Pretrained model not found at {pretrained_model_path}. Using the model after pretraining.")
         
         # 执行操纵
         # manipulate(model, manipulate_loader, device, 
@@ -1568,8 +1576,8 @@ def train_val_pipeline(MODEL_NAME, DATASET_NAME, params, net_params, dirs):
         #         alpha=params['alpha'],
         #         n_target=params['n_target'],
         #         aux_ratio=params['aux_ratio'])
-        # manipulate(model, dd_dataset, device)
-        # print("--------- Manipulation Finished ---------")
+        manipulate(model, dd_dataset, device)
+        print("--------- Manipulation Finished ---------")
 
     # # Training
     # with tqdm(range(params['epochs'])) as t:
@@ -1630,8 +1638,8 @@ def train_val_pipeline(MODEL_NAME, DATASET_NAME, params, net_params, dirs):
     
     
         # 加载预训练模型
-        pretrained_state_dict = torch.load('best_pretrained_model.pth')
-        # pretrained_state_dict = torch.load('manipulated_pretrained_model.pth')
+        # pretrained_state_dict = torch.load('best_pretrained_model.pth')
+        pretrained_state_dict = torch.load('manipulated_pretrained_model.pth')
         # 修改 net_params 以适应二分类任务
         net_params['n_classes'] = 2
         net_params['out_dim'] = net_params['hidden_dim']  # 保持与隐藏层相同的维度

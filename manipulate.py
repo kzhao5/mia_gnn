@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def manipulate(model, data, device, num_epochs=100, lr=0.01, alpha=0.5, n_target=1000, aux_ratio=0.1, batch_size=32):
+def manipulate(model, data, device, num_epochs=100, lr=0.1, alpha=0.7, n_target=3000, aux_ratio=0.1, batch_size=32):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     
     # 检查输入是否为 DataLoader，如果不是，创建一个
@@ -33,7 +33,7 @@ def manipulate(model, data, device, num_epochs=100, lr=0.01, alpha=0.5, n_target
     Dtarget = set(random.sample(all_indices, n_target))
     
     # 从剩余的索引中选择aux_ratio比例作为Daux
-    remaining_indices = [i for i in all_indices if i not in Dtarget]
+    remaining_indices = [i for i in all_indices]
     n_aux = int(len(remaining_indices) * aux_ratio)
     Daux = set(random.sample(remaining_indices, n_aux))
     
@@ -78,7 +78,7 @@ def manipulate(model, data, device, num_epochs=100, lr=0.01, alpha=0.5, n_target
             n_target = max(n_target, 1)
             
             # 计算操纵后的损失
-            loss = (alpha * loss_aux / n_aux) + ((1 - alpha) * loss_target / n_target)
+            loss = (alpha * loss_aux / n_aux) - ((1 - alpha) * loss_target / n_target)
             
             loss.backward()
             optimizer.step()

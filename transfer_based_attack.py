@@ -139,8 +139,12 @@ from attack_models import MLP
 from utils import load_pickled_data, select_top_k, binary_acc, testData, trainData
 warnings.simplefilter("ignore")
 
+# def get_latest_run(base_path):
+#     runs = glob.glob(os.path.join(base_path, 'GCN_DD_GPU*'))
+#     return max(runs, key=os.path.getctime) if runs else None
+
 def get_latest_run(base_path):
-    runs = glob.glob(os.path.join(base_path, 'GCN_DD_GPU*'))
+    runs = glob.glob(os.path.join(base_path, 'GatedGCN_CIFAR10_GPU*'))
     return max(runs, key=os.path.getctime) if runs else None
 
 def load_data(run_path, run_type):
@@ -155,7 +159,8 @@ def load_data(run_path, run_type):
     return X_train_in, y_train_in, X_train_out, y_train_out, num_node_1, num_node_0, num_edge_1, num_edge_0
 
 def transfer_based_attack(epochs):
-    base_path = '/home/kzhao/MIA-GNN/results/TUs_graph_classification/checkpoints'
+    # base_path = '/home/kzhao/MIA-GNN/results/TUs_graph_classification/checkpoints'
+    base_path = '/home/kzhao/MIA-GNN/out/SPs_graph_classification/checkpoints'
     latest_run = get_latest_run(base_path)
     if not latest_run:
         raise FileNotFoundError(f"No data found in {base_path}")
