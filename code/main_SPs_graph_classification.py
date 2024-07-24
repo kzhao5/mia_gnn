@@ -90,7 +90,7 @@ def view_model_param(MODEL_NAME, net_params):
     TRAINING CODE
 """
 
-def manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device):
+def manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device, initial_alpha=0.1, max_alpha=0.5, alpha_increase_rate=0.01, initial_lr=0.001, min_lr=0.0001, lr_decay_rate=0.95):
     print("------------Start manipulate------------")
 
     pretrain_model_path = 'SP_pretrain_model.pth'
@@ -98,7 +98,9 @@ def manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device)
     model_manipulate = gnn_model(MODEL_NAME, net_params)
     model_manipulate.load_state_dict(torch.load(pretrain_model_path))
     model_manipulate = model_manipulate.to(device)
-    manipulate_optimizer = optim.Adam(model_manipulate.parameters(), lr=0.001)
+    manipulate_optimizer = optim.Adam(model_manipulate.parameters(), lr=initial_lr)
+    scheduler = optim.lr_scheduler.ExponentialLR(manipulate_optimizer, gamma=lr_decay_rate)
+
 
     # 确保所有参数都需要梯度
     for param in model_manipulate.parameters():
@@ -109,7 +111,11 @@ def manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device)
     aux_loader = DataLoader(target_aux_dataset.aux, batch_size=params['batch_size'], shuffle=True, collate_fn=target_aux_dataset.collate)
 
     num_manipulate_epochs = 100
-    alpha = 0.5  # 控制poisoning强度的系数
+    # alpha = 0.5  # 控制poisoning强度的系数
+    alpha = initial_alpha
+    best_diff = 0
+    patience = 10
+    no_improve = 0
 
     for epoch in range(num_manipulate_epochs):
         model_manipulate.train()
@@ -152,6 +158,30 @@ def manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device)
 
         print(f'Manipulating Epoch {epoch+1}/{num_manipulate_epochs}, '
               f'Loss: {loss.item():.4f}, Target Loss: {avg_target_loss.item():.4f}, Aux Loss: {avg_aux_loss.item():.4f}')
+
+        # #添加早停，动态alpha
+        # diff = avg_target_loss - avg_aux_loss
+        # # 更新 alpha
+        # alpha = min(alpha + alpha_increase_rate, max_alpha)
+
+        # # 学习率衰减
+        # scheduler.step()
+
+        # # 早停
+        # if diff > best_diff:
+        #     best_diff = diff
+        #     no_improve = 0
+        #     torch.save(model_manipulate.state_dict(), 'best_manipulated_model.pth')
+        # else:
+        #     no_improve += 1
+        #     if no_improve >= patience:
+        #         print(f"Early stopping at epoch {epoch+1}")
+        #         break
+
+        # # 如果学习率太小，停止训练
+        # if manipulate_optimizer.param_groups[0]['lr'] < min_lr:
+        #     print(f"Learning rate too small, stopping at epoch {epoch+1}")
+        #     break
 
     print("Manipulation completed. Saving model.")
     torch.save(model_manipulate.state_dict(), 'manipulated_model.pth')
@@ -336,16 +366,16 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs, target_aux
     #         best_target_loss = avg_target_loss
     #         torch.save(model_manipulate.state_dict(), 'manipulated_model.pth')
 
-    # manipulated_model = manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device)
+    manipulated_model = manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device)
 
     # # 加载manipulate后的模型
     manipulated_model_path = 'manipulated_model.pth'
     pretrain_model_path = 'SP_pretrain_model.pth'
     # Init Target Model
-    t_model = gnn_model(MODEL_NAME, net_params)
-    # t_model = manipulated_model
+    # t_model = gnn_model(MODEL_NAME, net_params)
+    t_model = manipulated_model
     # t_model.load_state_dict(torch.load(manipulated_model_path))
-    t_model.load_state_dict(torch.load(pretrain_model_path))
+    # t_model.load_state_dict(torch.load(pretrain_model_path))
     t_model = t_model.to(device)
 
     t_optimizer = optim.Adam(t_model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
@@ -354,10 +384,10 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs, target_aux
                                                      patience=params['lr_schedule_patience'],
                                                      verbose=True)
     # Init Shadow Model
-    s_model = gnn_model(MODEL_NAME, net_params)
-    # s_model = manipulated_model
+    # s_model = gnn_model(MODEL_NAME, net_params)
+    s_model = manipulated_model
     # s_model.load_state_dict(torch.load(manipulated_model_path))
-    s_model.load_state_dict(torch.load(pretrain_model_path))
+    # s_model.load_state_dict(torch.load(pretrain_model_path))
     s_model = s_model.to(device)
 
     s_optimizer = optim.Adam(s_model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
