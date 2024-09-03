@@ -1,4 +1,4 @@
-name: mia_gnn
+name: mia1
 channels:
   - defaults
   - conda-forge
@@ -48,8 +48,10 @@ dependencies:
     - certifi==2020.12.5
     - chardet==4.0.0
     - decorator==4.4.2
-    - dgl==0.4.2
+    - dgl==2.0.0
     - dgl-cu100==0.4.2
+    # - dgl==2.0.0+cu121
+    # - dgl-cu100==0.4.2
     - gast==0.3.3
     - google-auth==1.24.0
     - google-auth-oauthlib==0.4.2
@@ -93,7 +95,7 @@ dependencies:
     - termcolor==1.1.0
     - theano==1.0.5
     - threadpoolctl==2.1.0
-    - torch==1.7.1
+    - torch==1.14.1
     - tqdm==4.56.0
     - typing-extensions==3.7.4.3
     - urllib3==1.26.2

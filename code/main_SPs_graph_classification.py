@@ -20,13 +20,11 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
+from dgl.data import CIFAR10SuperPixelDataset
+
 from tensorboardX import SummaryWriter
 from torch.utils.data.dataset import random_split
 from tqdm import tqdm
-from train.train_SPs_graph_classification import train_epoch_sparse as train_epoch, evaluate_network_sparse as evaluate_network
-from dgl.data import CIFAR10SuperPixelDataset
-from dgl.data import MNISTSuperPixelDataset
-from torch.utils.data import Subset
 
 class DotDict(dict):
     def __init__(self, **kwds):
@@ -90,104 +88,7 @@ def view_model_param(MODEL_NAME, net_params):
     TRAINING CODE
 """
 
-def manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device, initial_alpha=0.1, max_alpha=0.5, alpha_increase_rate=0.01, initial_lr=0.001, min_lr=0.0001, lr_decay_rate=0.95):
-    print("------------Start manipulate------------")
-
-    pretrain_model_path = 'SP_pretrain_model.pth'
-    # 加载预训练的模型
-    model_manipulate = gnn_model(MODEL_NAME, net_params)
-    model_manipulate.load_state_dict(torch.load(pretrain_model_path))
-    model_manipulate = model_manipulate.to(device)
-    manipulate_optimizer = optim.Adam(model_manipulate.parameters(), lr=initial_lr)
-    scheduler = optim.lr_scheduler.ExponentialLR(manipulate_optimizer, gamma=lr_decay_rate)
-
-
-    # 确保所有参数都需要梯度
-    for param in model_manipulate.parameters():
-        param.requires_grad = True
-
-    # 创建 Dtarget 和 Daux 的数据加载器
-    target_loader = DataLoader(target_aux_dataset.target, batch_size=params['batch_size'], shuffle=True, collate_fn=target_aux_dataset.collate)
-    aux_loader = DataLoader(target_aux_dataset.aux, batch_size=params['batch_size'], shuffle=True, collate_fn=target_aux_dataset.collate)
-
-    num_manipulate_epochs = 100
-    # alpha = 0.5  # 控制poisoning强度的系数
-    alpha = initial_alpha
-    best_diff = 0
-    patience = 10
-    no_improve = 0
-
-    for epoch in range(num_manipulate_epochs):
-        model_manipulate.train()
-        total_loss = 0
-        total_target_loss = 0
-        total_aux_loss = 0
-
-        # 处理 Dtarget
-        for batch_graphs, batch_labels in target_loader:
-            batch_graphs = batch_graphs.to(device)
-            batch_x = batch_graphs.ndata['feat'].to(device)
-            batch_e = batch_graphs.edata['feat'].to(device)
-            batch_labels = batch_labels.long().to(device)
-
-            out = model_manipulate(batch_graphs, batch_x, batch_e)
-            loss_target = F.cross_entropy(out, batch_labels)
-            
-            total_target_loss += loss_target
-
-        # 处理 Daux
-        for batch_graphs, batch_labels in aux_loader:
-            batch_graphs = batch_graphs.to(device)
-            batch_x = batch_graphs.ndata['feat'].to(device)
-            batch_e = batch_graphs.edata['feat'].to(device)
-            batch_labels = batch_labels.long().to(device)
-
-            out = model_manipulate(batch_graphs, batch_x, batch_e)
-            loss_aux = F.cross_entropy(out, batch_labels)
-            
-            total_aux_loss += loss_aux
-
-        # 计算总的损失
-        avg_target_loss = total_target_loss / len(target_loader)
-        avg_aux_loss = total_aux_loss / len(aux_loader)
-        loss = alpha * avg_aux_loss + (1 - alpha) * avg_target_loss
-
-        manipulate_optimizer.zero_grad()
-        loss.backward()
-        manipulate_optimizer.step()
-
-        print(f'Manipulating Epoch {epoch+1}/{num_manipulate_epochs}, '
-              f'Loss: {loss.item():.4f}, Target Loss: {avg_target_loss.item():.4f}, Aux Loss: {avg_aux_loss.item():.4f}')
-
-        # #添加早停，动态alpha
-        # diff = avg_target_loss - avg_aux_loss
-        # # 更新 alpha
-        # alpha = min(alpha + alpha_increase_rate, max_alpha)
-
-        # # 学习率衰减
-        # scheduler.step()
-
-        # # 早停
-        # if diff > best_diff:
-        #     best_diff = diff
-        #     no_improve = 0
-        #     torch.save(model_manipulate.state_dict(), 'best_manipulated_model.pth')
-        # else:
-        #     no_improve += 1
-        #     if no_improve >= patience:
-        #         print(f"Early stopping at epoch {epoch+1}")
-        #         break
-
-        # # 如果学习率太小，停止训练
-        # if manipulate_optimizer.param_groups[0]['lr'] < min_lr:
-        #     print(f"Learning rate too small, stopping at epoch {epoch+1}")
-        #     break
-
-    print("Manipulation completed. Saving model.")
-    torch.save(model_manipulate.state_dict(), 'manipulated_model.pth')
-    return model_manipulate
-
-def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs, target_aux_dataset):
+def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     t0 = time.time()
     per_epoch_time = []
 
@@ -223,159 +124,11 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs, target_aux
     print("Test Graphs: ", len(testset))
     print("Number of Classes: ", net_params['n_classes'])
 
-    #     # 获取所有数据
-    # all_data = trainset + valset + testset
-    # total_size = len(all_data)
-
-    # # 随机选择100个数据点作为Dtarget
-    # Dtarget = set(random.sample(range(total_size), 500))
-
-    # # 随机选择10%作为Daux
-    # aux_size = int(total_size * 0.2)
-    # all_indices = set(range(total_size))
-    # Daux = set(random.sample(all_indices, aux_size))
-
-    # Dtarget = set(Dtarget)
-    # Daux = set(Daux)
-
-    # # 剩下的90%用于训练
-    # train_indices = list(all_indices - Dtarget - Daux)
-    # train_size = len(train_indices)
-
-    # print("==============Start Pre-training Model==============")
-    # # print("root_ckpt_dir：", root_ckpt_dir)
-
-    # # 创建包含所有数据的数据加载器
-    # # all_data_loader = DataLoader(all_data, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
-    # def to_device(data):
-    #     return [item.to(device) for item in data]
-
-    # all_data_loader = DataLoader(all_data, batch_size=params['batch_size'], shuffle=True, collate_fn=lambda x: to_device(collate(x)))
-
-    # # Pre-train the model
-    # pretrain_model = gnn_model(MODEL_NAME, net_params)
-    # pretrain_model = pretrain_model.to(device)
-    # pretrain_optimizer = optim.Adam(pretrain_model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
-    # pretrain_scheduler = optim.lr_scheduler.ReduceLROnPlateau(pretrain_optimizer, mode='min',
-    #                                                         factor=params['lr_reduce_factor'],
-    #                                                         patience=params['lr_schedule_patience'],
-    #                                                         verbose=True)
-
-    # try:
-    #     with tqdm(range(100)) as t:  # 固定100轮
-    #         for epoch in t:
-    #             t.set_description('Pre-train Epoch %d' % epoch)
-    #             start = time.time()
-                
-    #             epoch_train_loss, epoch_train_acc, pretrain_optimizer = train_epoch(pretrain_model,
-    #                                                                                 pretrain_optimizer,
-    #                                                                                 device,
-    #                                                                                 all_data_loader, epoch)
-                
-    #             t.set_postfix(time=time.time() - start, lr=pretrain_optimizer.param_groups[0]['lr'],
-    #                         train_loss=epoch_train_loss, train_acc=epoch_train_acc)
-
-    #             pretrain_scheduler.step(epoch_train_loss)
-
-    #             if pretrain_optimizer.param_groups[0]['lr'] < params['min_lr']:
-    #                 print("\n!! LR EQUAL TO MIN LR SET.")
-    #                 break
-
-    # except KeyboardInterrupt:
-    #     print('-' * 89)
-    #     print('Pre-training --- Exiting from training early because of KeyboardInterrupt')
-
-    # # Save the final pre-trained model
-    
-    # torch.save(pretrain_model.state_dict(), 'SP_pretrain_model.pth')
-    # print("Pre-training completed. Model saved.")
-    
-
-    # # manipulate
-    # print("------------Start manipulate------------")
-
-    # pretrain_model_path = 'SP_pretrain_model.pth'
-    #  # 加载预训练的模型
-    # model_manipulate = gnn_model(MODEL_NAME, net_params) # 使用预训练模型作为起点
-    # model_manipulate.load_state_dict(torch.load(pretrain_model_path))
-    # model_manipulate = model_manipulate.to(device)
-    # manipulate_optimizer = optim.Adam(model_manipulate.parameters(), lr=0.01)
-
-    # # 确保所有参数都需要梯度
-    # for param in model_manipulate.parameters():
-    #     param.requires_grad = True
-    
-    # # 创建一个数据加载器，包含所有数据
-    # # all_loader = DataLoader(all_data, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
-    # all_loader = DataLoader(all_data, batch_size=params['batch_size'], shuffle=False, 
-    #                     collate_fn=lambda x: (dataset.collate(x)[0], dataset.collate(x)[1].long()))
-
-    # num_manipulate_epochs = 100  
-    # best_target_loss = float('-inf')
-
-    # for epoch in range(num_manipulate_epochs):
-    #     model_manipulate.train()
-    #     total_loss = 0
-    #     total_target_loss = 0
-
-    #     for batch_idx, (batch_graphs, batch_labels) in enumerate(all_loader):
-    #         manipulate_optimizer.zero_grad()
-    #         batch_graphs = batch_graphs.to(device)
-    #         batch_x = batch_graphs.ndata['feat'].to(device)
-    #         batch_e = batch_graphs.edata['feat'].to(device)
-    #         batch_labels = batch_labels.long().to(device)
-            
-
-    #         out = model_manipulate(batch_graphs, batch_x, batch_e)
-
-    #         # loss_aux = torch.tensor(0.0).to(device)
-    #         # loss_target = torch.tensor(0.0).to(device)
-    #         loss_aux = torch.zeros(1, requires_grad=True).to(device)
-    #         loss_target = torch.zeros(1, requires_grad=True).to(device)
-    #         n_aux = 0
-    #         n_target = 0
-
-    #         start_idx = batch_idx * params['batch_size']
-    #         for i in range(len(batch_labels)):
-    #             global_idx = start_idx + i
-    #             if global_idx in Dtarget:
-    #                 loss_target += F.cross_entropy(out[i].unsqueeze(0), batch_labels[i].unsqueeze(0))
-    #                 n_target += 1
-    #             elif global_idx in Daux:
-    #                 loss_aux += F.cross_entropy(out[i].unsqueeze(0), batch_labels[i].unsqueeze(0))
-    #                 n_aux += 1
-
-    #         # 避免除以零
-    #         n_aux = max(n_aux, 1)
-    #         n_target = max(n_target, 1)
-
-    #         # 计算操纵后的损失：最大化target损失，最小化aux损失
-    #         loss = - 0.5 * loss_target / n_target + 0.5 * loss_aux / n_aux
-            
-    #         loss.backward()
-    #         manipulate_optimizer.step()
-            
-    #         total_loss += loss.item()
-    #         total_target_loss += (loss_target / n_target).item()
-        
-    #     avg_loss = total_loss / len(all_loader)
-    #     avg_target_loss = total_target_loss / len(all_loader)
-    #     print(f'Manipulating Epoch {epoch+1}/{num_manipulate_epochs}, Loss: {avg_loss:.4f}, Target Loss: {avg_target_loss:.4f}')
-        
-    #     if avg_target_loss > best_target_loss:
-    #         best_target_loss = avg_target_loss
-    #         torch.save(model_manipulate.state_dict(), 'manipulated_model.pth')
-
-    manipulated_model = manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device)
-
-    # # 加载manipulate后的模型
-    manipulated_model_path = 'manipulated_model.pth'
     pretrain_model_path = 'SP_pretrain_model.pth'
+
     # Init Target Model
-    # t_model = gnn_model(MODEL_NAME, net_params)
-    t_model = manipulated_model
-    # t_model.load_state_dict(torch.load(manipulated_model_path))
-    # t_model.load_state_dict(torch.load(pretrain_model_path))
+    t_model = gnn_model(MODEL_NAME, net_params)
+    # t_model.load_state_dict(torch.load(pretrain_model_path)) # 添加
     t_model = t_model.to(device)
 
     t_optimizer = optim.Adam(t_model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
@@ -384,9 +137,7 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs, target_aux
                                                      patience=params['lr_schedule_patience'],
                                                      verbose=True)
     # Init Shadow Model
-    # s_model = gnn_model(MODEL_NAME, net_params)
-    s_model = manipulated_model
-    # s_model.load_state_dict(torch.load(manipulated_model_path))
+    s_model = gnn_model(MODEL_NAME, net_params)
     # s_model.load_state_dict(torch.load(pretrain_model_path))
     s_model = s_model.to(device)
 
@@ -397,134 +148,66 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs, target_aux
                                                        verbose=True)
     t_epoch_train_losses, t_epoch_val_losses, s_epoch_train_losses, s_epoch_val_losses = [], [], [], []
     t_epoch_train_accs, t_epoch_val_accs, s_epoch_train_accs, s_epoch_val_accs = [], [], [], []
-    # # Set train, val and test data size
-    # train_size = params['train_size']
-    # val_size = params['val_size']
-    # test_size = params['test_size']
-    # # Load Train, Val and Test Dataset
-    # print("Size of Trainset:{}, Valset:{}, Testset:{}".format(len(trainset), len(valset), len(testset)))
-    # print("Needed Train size:{} , Val Size:{} and Test Size：{}".format(train_size, val_size, test_size))
-    # # In order to flexible manage the size of Train, Val, Test data,
-    # # Here we resize the size
-    # # dataset_all = trainset + testset + valset
-    # # trainset, valset, testset = random_split(dataset_all,
-    # #                                          [len(dataset_all) - val_size * 2 - test_size * 2, val_size * 2,
-    # #                                           test_size * 2])
-    # # print("Adjust Size:", len(trainset), len(valset), len(testset))
+    # Set train, val and test data size
+    train_size = params['train_size']
+    val_size = params['val_size']
+    test_size = params['test_size']
+    # Load Train, Val and Test Dataset
+    print("Size of Trainset:{}, Valset:{}, Testset:{}".format(len(trainset), len(valset), len(testset)))
+    print("Needed Train size:{} , Val Size:{} and Test Size：{}".format(train_size, val_size, test_size))
+    # In order to flexible manage the size of Train, Val, Test data,
+    # Here we resize the size
+    # dataset_all = trainset + testset + valset
+    # trainset, valset, testset = random_split(dataset_all,
+    #                                          [len(dataset_all) - val_size * 2 - test_size * 2, val_size * 2,
+    #                                           test_size * 2])
+    # print("Adjust Size:", len(trainset), len(valset), len(testset))
 
-    # # split dataset into half: target & shadow
-    # target_train_set, shadow_train_set = random_split(trainset, [len(trainset) // 2, len(trainset) - len(trainset) // 2])
-    # target_val_set, shadow_val_set = random_split(valset, [len(valset) // 2, len(valset) - len(valset) // 2])
-    # target_test_set, shadow_test_set = random_split(testset, [len(testset) // 2, len(testset) - len(testset) // 2])
-    # print("target_train_set and shadow_train_set size are:{} and {}".format(len(target_train_set), len(shadow_train_set)))
+    # split dataset into half: target & shadow
+    target_train_set, shadow_train_set = random_split(trainset, [len(trainset) // 2, len(trainset) - len(trainset) // 2])
+    target_val_set, shadow_val_set = random_split(valset, [len(valset) // 2, len(valset) - len(valset) // 2])
+    target_test_set, shadow_test_set = random_split(testset, [len(testset) // 2, len(testset) - len(testset) // 2])
+    print("target_train_set and shadow_train_set size are:{} and {}".format(len(target_train_set), len(shadow_train_set)))
 
 
-    # # sample defined size of graphs
-    # selected_T_train_set, _ = random_split(target_train_set, [train_size, len(target_train_set) - train_size])
-    # selected_T_val_set, _ = random_split(target_val_set, [val_size, len(target_val_set) - val_size])
-    # selected_T_test_set, _ = random_split(target_test_set, [test_size, len(target_test_set) - test_size])
-    # print('Selected Training Size:{}, Validation Size: {} and Testing Size:{}'.format(len(selected_T_train_set),
-    #                                                                                   len(selected_T_val_set),
-    #                                                                                   len(selected_T_test_set)))
-    # selected_S_train_set, _ = random_split(shadow_train_set, [train_size, len(shadow_train_set) - train_size])
-    # selected_S_val_set, _ = random_split(shadow_val_set, [val_size, len(shadow_val_set) - val_size])
-    # selected_S_test_set, _ = random_split(shadow_test_set, [test_size, len(shadow_test_set) - test_size])
-    # print('Selected Shadow Size:{}, Validation Size: {} and Testing Size:{}'.format(len(selected_S_train_set),
-    #                                                                                   len(selected_S_val_set),
-    #                                                                                   len(selected_S_test_set)))
+    # sample defined size of graphs
+    selected_T_train_set, _ = random_split(target_train_set, [train_size, len(target_train_set) - train_size])
+    selected_T_val_set, _ = random_split(target_val_set, [val_size, len(target_val_set) - val_size])
+    selected_T_test_set, _ = random_split(target_test_set, [test_size, len(target_test_set) - test_size])
+    print('Selected Training Size:{}, Validation Size: {} and Testing Size:{}'.format(len(selected_T_train_set),
+                                                                                      len(selected_T_val_set),
+                                                                                      len(selected_T_test_set)))
+    selected_S_train_set, _ = random_split(shadow_train_set, [train_size, len(shadow_train_set) - train_size])
+    selected_S_val_set, _ = random_split(shadow_val_set, [val_size, len(shadow_val_set) - val_size])
+    selected_S_test_set, _ = random_split(shadow_test_set, [test_size, len(shadow_test_set) - test_size])
+    print('Selected Shadow Size:{}, Validation Size: {} and Testing Size:{}'.format(len(selected_S_train_set),
+                                                                                      len(selected_S_val_set),
+                                                                                      len(selected_S_test_set)))
 
-    # # batching exception for Diffpool
-    # drop_last = True if MODEL_NAME == 'DiffPool' else False
+    # batching exception for Diffpool
+    drop_last = True if MODEL_NAME == 'DiffPool' else False
 
-    # # import train functions for all other GCNs
-    # from train.train_SPs_graph_classification import train_epoch_sparse as train_epoch, \
-    #     evaluate_network_sparse as evaluate_network
-    # # Load data
-    # target_train_loader = DataLoader(selected_T_train_set, batch_size=params['batch_size'], shuffle=True,
-    #                                  drop_last=drop_last,
-    #                                  collate_fn=dataset.collate)
-    # target_val_loader = DataLoader(selected_T_val_set, batch_size=params['batch_size'], shuffle=False,
-    #                                drop_last=drop_last,collate_fn=dataset.collate)
-    # target_test_loader = DataLoader(selected_T_test_set, batch_size=params['batch_size'], shuffle=False,
-    #                                 drop_last=drop_last,collate_fn=dataset.collate)
+    # import train functions for all other GCNs
+    from train.train_SPs_graph_classification import train_epoch_sparse as train_epoch, \
+        evaluate_network_sparse as evaluate_network
+    # Load data
+    target_train_loader = DataLoader(selected_T_train_set, batch_size=params['batch_size'], shuffle=True,
+                                     drop_last=drop_last,
+                                     collate_fn=dataset.collate)
+    target_val_loader = DataLoader(selected_T_val_set, batch_size=params['batch_size'], shuffle=False,
+                                   drop_last=drop_last,collate_fn=dataset.collate)
+    target_test_loader = DataLoader(selected_T_test_set, batch_size=params['batch_size'], shuffle=False,
+                                    drop_last=drop_last,collate_fn=dataset.collate)
 
-    # shadow_train_loader = DataLoader(selected_S_train_set, batch_size=params['batch_size'], shuffle=True,
-    #                                  drop_last=drop_last,
-    #                                  collate_fn=dataset.collate)
-    # shadow_val_loader = DataLoader(selected_S_val_set, batch_size=params['batch_size'], shuffle=False,
-    #                                drop_last=drop_last,
-    #                                collate_fn=dataset.collate)
-    # shadow_test_loader = DataLoader(selected_S_test_set, batch_size=params['batch_size'], shuffle=False,
-    #                                 drop_last=drop_last,
-    #                                 collate_fn=dataset.collate)
-
-    #     # 剩下的90%用于训练、验证和测试
-    # train_val_test_indices = list(all_indices - Dtarget - Daux)
-    # random.shuffle(train_val_test_indices)
-
-    # # 划分训练、验证和测试集
-    # train_size = params['train_size']
-    # val_size = params['val_size']
-    # test_size = params['test_size']
-
-    # # 确保划分的大小不超过可用数据
-    # available_size = len(train_val_test_indices)
-    # if train_size + val_size + test_size > available_size:
-    #     print("Warning: Requested sizes exceed available data. Adjusting sizes.")
-    #     ratio = available_size / (train_size + val_size + test_size)
-    #     train_size = int(train_size * ratio)
-    #     val_size = int(val_size * ratio)
-    #     test_size = available_size - train_size - val_size
-
-    # train_indices = train_val_test_indices[:train_size]
-    # val_indices = train_val_test_indices[train_size:train_size+val_size]
-    # test_indices = train_val_test_indices[train_size+val_size:train_size+val_size+test_size]
-
-    # # 创建新的数据集
-    # train_data = [all_data[i] for i in train_indices]
-    # val_data = [all_data[i] for i in val_indices]
-    # test_data = [all_data[i] for i in test_indices]
-
-    # # 分割为target和shadow
-    # target_train_set, shadow_train_set = random_split(train_data, [len(train_data) // 2, len(train_data) - len(train_data) // 2])
-    # target_val_set, shadow_val_set = random_split(val_data, [len(val_data) // 2, len(val_data) - len(val_data) // 2])
-    # target_test_set, shadow_test_set = random_split(test_data, [len(test_data) // 2, len(test_data) - len(test_data) // 2])
-
-    # print("Size of Trainset:{}, Valset:{}, Testset:{}".format(len(train_data), len(val_data), len(test_data)))
-    # print("Target train size:{}, val size:{}, test size:{}".format(len(target_train_set), len(target_val_set), len(target_test_set)))
-    # print("Shadow train size:{}, val size:{}, test size:{}".format(len(shadow_train_set), len(shadow_val_set), len(shadow_test_set)))
-
-    # # batching exception for Diffpool
-    # drop_last = True if MODEL_NAME == 'DiffPool' else False
-
-    # 创建新的数据加载器
-    # target_train_loader = DataLoader(target_train_set, batch_size=params['batch_size'], shuffle=True, drop_last=drop_last, collate_fn=dataset.collate)
-    # target_val_loader = DataLoader(target_val_set, batch_size=params['batch_size'], shuffle=False, drop_last=drop_last, collate_fn=dataset.collate)
-    # target_test_loader = DataLoader(target_test_set, batch_size=params['batch_size'], shuffle=False, drop_last=drop_last, collate_fn=dataset.collate)
-
-    # shadow_train_loader = DataLoader(shadow_train_set, batch_size=params['batch_size'], shuffle=True, drop_last=drop_last, collate_fn=dataset.collate)
-    # shadow_val_loader = DataLoader(shadow_val_set, batch_size=params['batch_size'], shuffle=False, drop_last=drop_last, collate_fn=dataset.collate)
-    # shadow_test_loader = DataLoader(shadow_test_set, batch_size=params['batch_size'], shuffle=False, drop_last=drop_last, collate_fn=dataset.collate)
-        # 分割数据集
-        
-
-    def split_dataset(dataset, ratio=0.5):
-        split = int(len(dataset) * ratio)
-        return Subset(dataset, range(split)), Subset(dataset, range(split, len(dataset)))
-
-    target_train, shadow_train = split_dataset(dataset.train)
-    target_val, shadow_val = split_dataset(dataset.val)
-    target_test, shadow_test = split_dataset(dataset.test)
-
-    # 创建数据加载器
-    target_train_loader = DataLoader(target_train, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
-    target_val_loader = DataLoader(target_val, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
-    target_test_loader = DataLoader(target_test, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
-
-    shadow_train_loader = DataLoader(shadow_train, batch_size=params['batch_size'], shuffle=True, collate_fn=dataset.collate)
-    shadow_val_loader = DataLoader(shadow_val, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
-    shadow_test_loader = DataLoader(shadow_test, batch_size=params['batch_size'], shuffle=False, collate_fn=dataset.collate)
-
+    shadow_train_loader = DataLoader(selected_S_train_set, batch_size=params['batch_size'], shuffle=True,
+                                     drop_last=drop_last,
+                                     collate_fn=dataset.collate)
+    shadow_val_loader = DataLoader(selected_S_val_set, batch_size=params['batch_size'], shuffle=False,
+                                   drop_last=drop_last,
+                                   collate_fn=dataset.collate)
+    shadow_test_loader = DataLoader(selected_S_test_set, batch_size=params['batch_size'], shuffle=False,
+                                    drop_last=drop_last,
+                                    collate_fn=dataset.collate)
 
     # At any point you can hit Ctrl + C to break out of training early.
     print("==============Start Training Target Model==============")
@@ -682,11 +365,6 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs, target_aux
 
 
 
-def collate(samples):
-        graphs, labels = map(list, zip(*samples))
-        batched_graph = dgl.batch(graphs)
-        return batched_graph, torch.tensor(labels)
-
 
 
 def main():
@@ -751,10 +429,8 @@ def main():
     else:
         DATASET_NAME = config['dataset']
     # dataset = LoadData(DATASET_NAME)
-    # 使用CIFAR10SuperPixelDataset
     trainset = CIFAR10SuperPixelDataset(split='train')
     testset = CIFAR10SuperPixelDataset(split='test')
-    # CIFAR10SuperPixelDataset没有专门的验证集,从训练集中分出一部分作为验证集
     val_size = int(0.1 * len(trainset))  # 使用10%的训练数据作为验证集
     trainset, valset = torch.utils.data.random_split(trainset, [len(trainset) - val_size, val_size])
 
@@ -763,24 +439,15 @@ def main():
         batched_graph = dgl.batch(graphs)
         return batched_graph, torch.tensor(labels)
 
-    def reduce_dataset(dataset, fraction=0.1):
-        num_samples = int(len(dataset) * fraction)
-        return random.sample(list(dataset), num_samples)
-
-    # 减小数据集大小
-    trainset = reduce_dataset(trainset)
-    valset = reduce_dataset(valset)
-    testset = reduce_dataset(testset)
-
         # 合并所有数据
     all_data = trainset + valset + testset
     total_size = len(all_data)
 
     # 随机选择500个数据点作为Dtarget
-    Dtarget = set(random.sample(range(total_size), 50))
+    Dtarget = set(random.sample(range(total_size), 0))
 
     # 随机选择20%作为Daux
-    aux_size = int(total_size * 0.1)
+    aux_size = int(total_size * 0)
     all_indices = set(range(total_size))
     Daux = set(random.sample(all_indices, aux_size))
 
@@ -807,13 +474,6 @@ def main():
     target_val_set, shadow_val_set = random_split(val_data, [len(val_data) // 2, len(val_data) - len(val_data) // 2])
     target_test_set, shadow_test_set = random_split(test_data, [len(test_data) // 2, len(test_data) - len(test_data) // 2])
 
-    print(f"Total reduced dataset size: {total_size}")
-    print(f"Dtarget size: {len(Dtarget)}")
-    print(f"Daux size: {len(Daux)}")
-    print(f"Remaining data size: {len(remaining_indices)}")
-    print(f"Train size: {len(train_data)}, Val size: {len(val_data)}, Test size: {len(test_data)}")
-    print(f"Target train size: {len(target_train_set)}, val size: {len(target_val_set)}, test size: {len(target_test_set)}")
-    print(f"Shadow train size: {len(shadow_train_set)}, val size: {len(shadow_val_set)}, test size: {len(shadow_test_set)}")
 
     # 创建一个类似于原来 LoadData 返回的对象
     class DatasetWrapper:
@@ -829,18 +489,6 @@ def main():
                              target_val_set + shadow_val_set, 
                              target_test_set + shadow_test_set)
 
-    Dtarget_data = [all_data[i] for i in Dtarget]
-    Daux_data = [all_data[i] for i in Daux]
-
-    class TargetAuxDatasetWrapper:
-        def __init__(self, target, aux):
-            self.target = target
-            self.aux = aux
-            self.name = "CIFAR10SuperPixel_TargetAux"
-            self.collate = collate  # 假设 collate 函数已定义
-
-    target_aux_dataset = TargetAuxDatasetWrapper(Dtarget_data, Daux_data)
-    
     if args.out_dir is not None:
         out_dir = args.out_dir
     else:
@@ -872,8 +520,6 @@ def main():
     net_params['device'] = device
     net_params['gpu_id'] = config['gpu']['id']
     net_params['batch_size'] = params['batch_size']
-    
-
     if args.L is not None:
         net_params['L'] = int(args.L)
     if args.hidden_dim is not None:
@@ -919,18 +565,15 @@ def main():
     if args.self_loop is not None:
         net_params['self_loop'] = True if args.self_loop=='True' else False
 
-    net_params['edge_feat'] = True
+    if args.edge_feat is not None:
+        net_params['edge_feat'] = True if args.edge_feat=='True' else False
+    elif 'edge_feat' not in net_params:
+        net_params['edge_feat'] = True  # Set a default value
 
     # Superpixels
-    # net_params['in_dim'] = dataset.train[0][0].ndata['feat'][0].size(0)
-    # net_params['in_dim_edge'] = dataset.train[0][0].edata['feat'][0].size(0)
-    # num_classes = len(np.unique(np.array(dataset.train[:][1])))
-    # net_params['n_classes'] = num_classes
-
-    # Superpixels
-    net_params['in_dim'] = trainset[0][0].ndata['feat'].shape[1]
-    net_params['in_dim_edge'] = trainset[0][0].edata['feat'].shape[1]
-    num_classes = 10  # CIFAR10有10个类别
+    net_params['in_dim'] = dataset.train[0][0].ndata['feat'][0].size(0)
+    net_params['in_dim_edge'] = dataset.train[0][0].edata['feat'][0].size(0)
+    num_classes = 10
     net_params['n_classes'] = num_classes
 
     if MODEL_NAME == 'DiffPool':
@@ -963,25 +606,9 @@ def main():
         os.makedirs(out_dir + 'configs')
 
     net_params['total_param'] = view_model_param(MODEL_NAME, net_params)
-    train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs, target_aux_dataset)
+    train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs)
 
 
 
 
 main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
