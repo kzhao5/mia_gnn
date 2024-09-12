@@ -63,7 +63,14 @@ def gpu_setup(use_gpu, gpu_id):
 
 
 
-
+# # 在导入语句之后添加这个函数
+# def set_seed(seed):
+#     random.seed(seed)
+#     np.random.seed(seed)
+#     torch.manual_seed(seed)
+#     if torch.cuda.is_available():
+#         torch.cuda.manual_seed(seed)
+#         torch.cuda.manual_seed_all(seed)
 
 
 
@@ -84,11 +91,147 @@ def view_model_param(MODEL_NAME, net_params):
     return total_param
 
 
+# def manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device, path, alpha=0.5, num_manipulate_epochs=200, lr=0.001):
+#     print("------------Start manipulate------------")
+
+#     pretrain_model_path = path
+#     model_manipulate = gnn_model(MODEL_NAME, net_params)
+#     model_manipulate.load_state_dict(torch.load(pretrain_model_path))
+#     model_manipulate = model_manipulate.to(device)
+#     manipulate_optimizer = optim.Adam(model_manipulate.parameters(), lr=lr)
+#     scheduler = optim.lr_scheduler.StepLR(manipulate_optimizer, step_size=30, gamma=0.1)
+
+#     # 创建 Dtarget 和 Daux 的数据加载器
+#     target_loader = DataLoader(target_aux_dataset.target, batch_size=params['batch_size'], shuffle=True, collate_fn=target_aux_dataset.collate)
+#     aux_loader = DataLoader(target_aux_dataset.aux, batch_size=params['batch_size'], shuffle=True, collate_fn=target_aux_dataset.collate)
+
+#     for epoch in range(num_manipulate_epochs):
+#         model_manipulate.train()
+#         total_loss = 0
+#         total_target_loss = 0
+#         total_aux_loss = 0
+
+#         with tqdm(zip(target_loader, aux_loader), total=min(len(target_loader), len(aux_loader))) as t:
+#             for (batch_graphs_target, batch_labels_target), (batch_graphs_aux, batch_labels_aux) in t:
+#                 # 处理 Dtarget
+#                 batch_graphs_target = batch_graphs_target.to(device)
+#                 batch_x_target = batch_graphs_target.ndata['feat'].to(device)
+#                 batch_e_target = batch_graphs_target.edata['feat'].to(device)
+#                 batch_labels_target = batch_labels_target.long().to(device)
+
+#                 out_target = model_manipulate(batch_graphs_target, batch_x_target, batch_e_target)
+#                 loss_target = F.cross_entropy(out_target, batch_labels_target)
+
+#                 # 处理 Daux
+#                 batch_graphs_aux = batch_graphs_aux.to(device)
+#                 batch_x_aux = batch_graphs_aux.ndata['feat'].to(device)
+#                 batch_e_aux = batch_graphs_aux.edata['feat'].to(device)
+#                 batch_labels_aux = batch_labels_aux.long().to(device)
+
+#                 out_aux = model_manipulate(batch_graphs_aux, batch_x_aux, batch_e_aux)
+#                 loss_aux = F.cross_entropy(out_aux, batch_labels_aux)
+
+#                 # 计算总的损失
+#                 loss = alpha * loss_aux - (1 - alpha) * loss_target
+                
+
+#                 manipulate_optimizer.zero_grad()
+#                 loss.backward()
+#                 manipulate_optimizer.step()
+
+#                 total_loss += loss.item()
+#                 total_target_loss += loss_target.item()
+#                 total_aux_loss += loss_aux.item()
+
+#                 t.set_postfix(loss=loss.item(), target_loss=loss_target.item(), aux_loss=loss_aux.item())
+
+#         avg_loss = total_loss / len(target_loader)
+#         avg_target_loss = total_target_loss / len(target_loader)
+#         avg_aux_loss = total_aux_loss / len(target_loader)
+
+#         print(f'Manipulating Epoch {epoch+1}/{num_manipulate_epochs}, '
+#               f'Loss: {avg_loss:.4f}, Target Loss: {avg_target_loss:.4f}, Aux Loss: {avg_aux_loss:.4f}')
+
+#         scheduler.step()
+
+#     print("Manipulation completed. Saving model.")
+#     torch.save(model_manipulate.state_dict(), 'manipulated_model.pth')
+#     return model_manipulate
+def manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device, path, alpha=0.5, num_manipulate_epochs=100, lr=0.001):
+    print("------------Start manipulate------------")
+
+    pretrain_model_path = path
+    model_manipulate = gnn_model(MODEL_NAME, net_params)
+    model_manipulate.load_state_dict(torch.load(pretrain_model_path))
+    model_manipulate = model_manipulate.to(device)
+    manipulate_optimizer = optim.Adam(model_manipulate.parameters(), lr=lr)
+    scheduler = optim.lr_scheduler.StepLR(manipulate_optimizer, step_size=30, gamma=0.1)
+
+    # 创建 Dtarget 和 Daux 的数据加载器
+    target_loader = DataLoader(target_aux_dataset.target, batch_size=params['batch_size'], shuffle=True, collate_fn=target_aux_dataset.collate)
+    aux_loader = DataLoader(target_aux_dataset.aux, batch_size=params['batch_size'], shuffle=True, collate_fn=target_aux_dataset.collate)
+
+    for epoch in range(num_manipulate_epochs):
+        model_manipulate.train()
+        epoch_loss = 0
+        epoch_target_loss = 0
+        epoch_aux_loss = 0
+        nb_data = 0
+
+        for iter, ((batch_graphs_target, batch_labels_target), (batch_graphs_aux, batch_labels_aux)) in enumerate(zip(target_loader, aux_loader)):
+            # 处理 target 数据
+            batch_graphs_target = batch_graphs_target.to(device)
+            batch_x_target = batch_graphs_target.ndata['feat'].to(device)
+            batch_e_target = batch_graphs_target.edata['feat'].to(device)
+            batch_labels_target = batch_labels_target.long().to(device)
+
+            # 处理 aux 数据
+            batch_graphs_aux = batch_graphs_aux.to(device)
+            batch_x_aux = batch_graphs_aux.ndata['feat'].to(device)
+            batch_e_aux = batch_graphs_aux.edata['feat'].to(device)
+            batch_labels_aux = batch_labels_aux.long().to(device)
+
+            manipulate_optimizer.zero_grad()
+
+            # 前向传播
+            batch_scores_target = model_manipulate(batch_graphs_target, batch_x_target, batch_e_target)
+            batch_scores_aux = model_manipulate(batch_graphs_aux, batch_x_aux, batch_e_aux)
+
+            # 计算损失
+            loss_target = model_manipulate.loss(batch_scores_target, batch_labels_target)
+            loss_aux = model_manipulate.loss(batch_scores_aux, batch_labels_aux)
+
+            # 组合损失：增大 target 损失，保持 aux 损失不变
+            loss = alpha * loss_aux - (1 - alpha) * loss_target
+
+            # 反向传播和优化
+            loss.backward()
+            manipulate_optimizer.step()
+
+            epoch_loss += loss.detach().item()
+            epoch_target_loss += loss_target.detach().item()
+            epoch_aux_loss += loss_aux.detach().item()
+            nb_data += batch_labels_target.size(0)
+
+        epoch_loss /= (iter + 1)
+        epoch_target_loss /= (iter + 1)
+        epoch_aux_loss /= (iter + 1)
+
+        print(f'Manipulating Epoch {epoch+1}/{num_manipulate_epochs}, '
+              f'Loss: {epoch_loss:.4f}, Target Loss: {epoch_target_loss:.4f}, Aux Loss: {epoch_aux_loss:.4f}')
+
+        scheduler.step()
+
+    print("Manipulation completed. Saving model.")
+    torch.save(model_manipulate.state_dict(), 'manipulated_model.pth')
+    return model_manipulate
+
+
 """
     TRAINING CODE
 """
 
-def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
+def train_val_pipeline(MODEL_NAME, dataset, params, net_params, target_aux_dataset, dirs, device):
     t0 = time.time()
     per_epoch_time = []
 
@@ -124,11 +267,23 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     print("Test Graphs: ", len(testset))
     print("Number of Classes: ", net_params['n_classes'])
 
-    pretrain_model_path = 'SP_pretrain_model.pth'
+    t_path = "new_pretrained.pth"
+    s_path = "new_shadow.pth"
+    manipulated_t_model = manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device, t_path)
+    # manipulated_s_model = manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device, s_path)
+
+    # # 加载manipulate后的模型
+    manipulated_model_path = 'manipulated_model.pth'
+
+    pretrain_model_path = 'new_pretrained.pth'
+    # pretrain_model_path = 'new_manipulated_pretrained.pth'
+    pretrain_model_path1 = 'new_shadow.pth'
+
 
     # Init Target Model
-    t_model = gnn_model(MODEL_NAME, net_params)
+    # t_model = gnn_model(MODEL_NAME, net_params)
     # t_model.load_state_dict(torch.load(pretrain_model_path)) # 添加
+    t_model = manipulated_t_model
     t_model = t_model.to(device)
 
     t_optimizer = optim.Adam(t_model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
@@ -137,8 +292,9 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
                                                      patience=params['lr_schedule_patience'],
                                                      verbose=True)
     # Init Shadow Model
-    s_model = gnn_model(MODEL_NAME, net_params)
+    # s_model = gnn_model(MODEL_NAME, net_params)
     # s_model.load_state_dict(torch.load(pretrain_model_path))
+    s_model = manipulated_t_model
     s_model = s_model.to(device)
 
     s_optimizer = optim.Adam(s_model.parameters(), lr=params['init_lr'], weight_decay=params['weight_decay'])
@@ -334,6 +490,10 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     print("=================Evaluate Target Model Start=================")
     _, t_test_acc = evaluate_network(t_model, device, target_test_loader, '0|T|' + t_ckpt_dir)
     _, t_train_acc = evaluate_network(t_model, device, target_train_loader, '1|T|' + t_ckpt_dir)
+
+    # torch.save(t_model.state_dict(), 'new_pretrained.pth')
+    # torch.save(t_model.state_dict(), 'new_manipulated_pretrained.pth')
+
     print("Target Test Accuracy: {:.4f}".format(t_test_acc))
     print("Target Train Accuracy: {:.4f}".format(t_train_acc))
     print("Target Convergence Time (Epochs): {:.4f}".format(epoch))
@@ -342,6 +502,9 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs):
     print("=================Evaluate Shadow Model Start=================")
     _, s_test_acc = evaluate_network(s_model, device, shadow_test_loader, '0|S|' + s_ckpt_dir)
     _, s_train_acc = evaluate_network(s_model, device, shadow_train_loader, '1|S|' + s_ckpt_dir)
+
+    # torch.save(s_model.state_dict(), 'new_shadow.pth')
+
     print("Shadow Test Accuracy: {:.4f}".format(s_test_acc))
     print("Shadow Train Accuracy: {:.4f}".format(s_train_acc))
     print("Shadow Convergence Time (Epochs): {:.4f}".format(epoch))
@@ -414,6 +577,8 @@ def main():
     with open(args.config) as f:
         config = json.load(f)
 
+    # set_seed(params['seed'])
+
     # device
     if args.gpu_id is not None:
         config['gpu']['id'] = int(args.gpu_id)
@@ -444,10 +609,13 @@ def main():
     total_size = len(all_data)
 
     # 随机选择500个数据点作为Dtarget
-    Dtarget = set(random.sample(range(total_size), 0))
+    target_size = int(total_size*0.01)
+    all_indices = set(range(total_size))
+    # Dtarget = set(random.sample(range(total_size), 0))
+    Dtarget = set(random.sample(all_indices, target_size))
 
     # 随机选择20%作为Daux
-    aux_size = int(total_size * 0)
+    aux_size = int(total_size * 0.1)
     all_indices = set(range(total_size))
     Daux = set(random.sample(all_indices, aux_size))
 
@@ -488,6 +656,18 @@ def main():
     dataset = DatasetWrapper(target_train_set + shadow_train_set, 
                              target_val_set + shadow_val_set, 
                              target_test_set + shadow_test_set)
+    
+    Dtarget_data = [all_data[i] for i in Dtarget]
+    Daux_data = [all_data[i] for i in Daux]
+
+    class TargetAuxDatasetWrapper:
+        def __init__(self, target, aux):
+            self.target = target
+            self.aux = aux
+            self.name = "CIFAR10SuperPixel_TargetAux"
+            self.collate = collate  # 假设 collate 函数已定义
+
+    target_aux_dataset = TargetAuxDatasetWrapper(Dtarget_data, Daux_data)
 
     if args.out_dir is not None:
         out_dir = args.out_dir
@@ -606,7 +786,7 @@ def main():
         os.makedirs(out_dir + 'configs')
 
     net_params['total_param'] = view_model_param(MODEL_NAME, net_params)
-    train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs)
+    train_val_pipeline(MODEL_NAME, dataset, params, net_params, target_aux_dataset,dirs, device)
 
 
 

@@ -91,10 +91,11 @@ def view_model_param(MODEL_NAME, net_params):
 """
     TRAINING CODE
 """
-def manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device, alpha=0.2, num_manipulate_epochs=10, lr=0.001):
+def manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device, alpha=0.5, num_manipulate_epochs=10, lr=0.001):
     print("------------Start manipulate------------")
 
-    pretrain_model_path = 'SP_pretrain_model.pth'
+    # pretrain_model_path = 'SP_pretrain_model.pth'
+    pretrain_model_path = 'new_pretrained.pth'
     model_manipulate = gnn_model(MODEL_NAME, net_params)
     model_manipulate.load_state_dict(torch.load(pretrain_model_path))
     model_manipulate = model_manipulate.to(device)
@@ -132,7 +133,7 @@ def manipulate_model(MODEL_NAME, net_params, target_aux_dataset, params, device,
                 loss_aux = F.cross_entropy(out_aux, batch_labels_aux)
 
                 # 计算总的损失
-                loss = - alpha * loss_aux + (1 - alpha) * loss_target
+                loss = alpha * loss_aux - (1 - alpha) * loss_target
                 
 
                 manipulate_optimizer.zero_grad()
@@ -601,11 +602,11 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs, target_aux
 
     # # 加载manipulate后的模型
     manipulated_model_path = 'manipulated_model.pth'
-    pretrain_model_path = 'SP_pretrain_model.pth'
+    pretrain_model_path = 'new_pretrained.pth'
     # Init Target Model
-    # t_model = gnn_model(MODEL_NAME, net_params)
-    # t_model.load_state_dict(torch.load(pretrain_model_path))
-    t_model = manipulated_model
+    t_model = gnn_model(MODEL_NAME, net_params)
+    t_model.load_state_dict(torch.load(pretrain_model_path))
+    # t_model = manipulated_model
     # t_model.load_state_dict(torch.load(manipulated_model_path))
     
     t_model = t_model.to(device)
@@ -616,9 +617,9 @@ def train_val_pipeline(MODEL_NAME, dataset, params, net_params, dirs, target_aux
                                                      patience=params['lr_schedule_patience'],
                                                      verbose=True)
     # Init Shadow Model
-    # s_model = gnn_model(MODEL_NAME, net_params)
-    # s_model.load_state_dict(torch.load(pretrain_model_path))
-    s_model = manipulated_model
+    s_model = gnn_model(MODEL_NAME, net_params)
+    s_model.load_state_dict(torch.load(pretrain_model_path))
+    # s_model = manipulated_model
     # s_model.load_state_dict(torch.load(manipulated_model_path))
     
     s_model = s_model.to(device)
@@ -1009,49 +1010,49 @@ def main():
     all_data = trainset + valset + testset
     total_size = len(all_data)
 
-    # # 随机选择500个数据点作为Dtarget
-    # Dtarget = set(random.sample(range(total_size), 50))
+    # 随机选择500个数据点作为Dtarget
+    Dtarget = set(random.sample(range(total_size), 50))
 
-    # # 随机选择20%作为Daux
-    # aux_size = int(total_size * 0.1)
-    # all_indices = set(range(total_size))
-    # Daux = set(random.sample(all_indices, aux_size))
-
-    # # 剩下的数据用于训练、验证和测试
-    # remaining_indices = list(all_indices - Daux)
-    # random.shuffle(remaining_indices)
-
-    # # 将剩余数据分为训练、验证和测试集
-    # train_size = int(0.8 * len(remaining_indices))
-    # val_size = int(0.1 * len(remaining_indices))
-    # test_size = len(remaining_indices) - train_size - val_size
-
-    # train_indices = remaining_indices[:train_size]
-    # val_indices = remaining_indices[train_size:train_size+val_size]
-    # test_indices = remaining_indices[train_size+val_size:]
-
-    # 随机选择10%作为Daux（非成员数据）
-    aux_size = int(total_size * 0.2)
+    # 随机选择20%作为Daux
+    aux_size = int(total_size * 0.1)
     all_indices = set(range(total_size))
     Daux = set(random.sample(all_indices, aux_size))
 
-    # 从剩余数据中选择20%作为Dtarget（潜在的成员数据）
-    remaining_indices = list(all_indices - Daux)
-    target_size = int(len(remaining_indices) * 0.4)
-    Dtarget = set(random.sample(remaining_indices, target_size))
-
     # 剩下的数据用于训练、验证和测试
-    final_remaining_indices = list(set(remaining_indices) - Dtarget)
-    random.shuffle(final_remaining_indices)
+    remaining_indices = list(all_indices - Daux)
+    random.shuffle(remaining_indices)
 
     # 将剩余数据分为训练、验证和测试集
-    train_size = int(0.8 * len(final_remaining_indices))
-    val_size = int(0.1 * len(final_remaining_indices))
-    test_size = len(final_remaining_indices) - train_size - val_size
+    train_size = int(0.8 * len(remaining_indices))
+    val_size = int(0.1 * len(remaining_indices))
+    test_size = len(remaining_indices) - train_size - val_size
 
     train_indices = remaining_indices[:train_size]
     val_indices = remaining_indices[train_size:train_size+val_size]
     test_indices = remaining_indices[train_size+val_size:]
+
+    # # 随机选择10%作为Daux（非成员数据）
+    # aux_size = int(total_size * 0.2)
+    # all_indices = set(range(total_size))
+    # Daux = set(random.sample(all_indices, aux_size))
+
+    # # 从剩余数据中选择20%作为Dtarget（潜在的成员数据）
+    # remaining_indices = list(all_indices - Daux)
+    # target_size = int(len(remaining_indices) * 0.4)
+    # Dtarget = set(random.sample(remaining_indices, target_size))
+
+    # # 剩下的数据用于训练、验证和测试
+    # final_remaining_indices = list(set(remaining_indices) - Dtarget)
+    # random.shuffle(final_remaining_indices)
+
+    # # 将剩余数据分为训练、验证和测试集
+    # train_size = int(0.8 * len(final_remaining_indices))
+    # val_size = int(0.1 * len(final_remaining_indices))
+    # test_size = len(final_remaining_indices) - train_size - val_size
+
+    # train_indices = remaining_indices[:train_size]
+    # val_indices = remaining_indices[train_size:train_size+val_size]
+    # test_indices = remaining_indices[train_size+val_size:]
 
     # 创建新的数据集
     train_data = [all_data[i] for i in train_indices]

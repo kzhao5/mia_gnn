@@ -23,7 +23,7 @@
 # Default values
 NUMBER=1
 START_EPOCH=100
-DATASET="MNIST"
+DATASET="CIFAR10"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]
@@ -60,7 +60,7 @@ echo "Dataset: $DATASET"
 
 # Run the Python script with the provided arguments
 python code/main_SPs_graph_classification.py \
-    --config '/home/kzhao/mia_gnn/configs/SPS/superpixels_graph_classification_GCN_CIFAR10_100k.json' \
+    --config '/home/kzhao/mia_gnn/configs/SPS/superpixels_graph_classification_GatedGCN_CIFAR10_100k.json' \
     --dataset "$DATASET" \
     --gpu_id 0 \
     --model GatedGCN \
