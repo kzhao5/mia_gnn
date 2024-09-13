@@ -33,6 +33,7 @@ For graph converted via SuperPixel (CIFAR10, MNIST)
 bash run_SPs_target_shadow_training.sh --number 10 --start_epoch 100 --dataset MNIST
 </pre>
 
+bash run_SPs_target_shadow_training.sh --number 1 --start_epoch 100 --dataset CIFAR10
 
 --number this is the number of repeated model training 
 
@@ -55,3 +56,10 @@ bash run_transfer_attach.sh --number 15
 
 
 For detailed code execution, you can refer to 'transfer_based_attack.py'.
+
+<pre>
+srun python3 -m venv ~/mia_gnn
+source ~/mia_gnn_env/bin/activate
+
+pip install dgl==2.0.0 -f https://data.dgl.ai/wheels/cu118/repo.html
+<pre>

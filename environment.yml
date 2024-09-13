@@ -138,7 +138,7 @@ dependencies:
   - pytorch::torchaudio
   - pytorch::pytorch-cuda=12.1
   - pyg::pyg
-  - dgl
+  - dgl==2.0.0+cu118 --find-links https://data.dgl.ai/wheels/cu118/repo.html
   - numpy
   - pandas
   - scikit-learn

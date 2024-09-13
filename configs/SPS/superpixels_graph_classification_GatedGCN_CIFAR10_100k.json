@@ -1,7 +1,7 @@
 {
     "gpu": {
         "use": true,
-        "id": 0
+        "id": "all"
     },
     
     "model": "GatedGCN",

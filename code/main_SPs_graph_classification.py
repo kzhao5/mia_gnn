@@ -48,17 +48,55 @@ from data.data import LoadData # import dataset
 """
     GPU Setup
 """
+# def gpu_setup(use_gpu, gpu_id):
+#     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+#     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+
+#     if torch.cuda.is_available() and use_gpu:
+#         print('cuda available with GPU:' ,torch.cuda.get_device_name(0))
+#         device = torch.device("cuda")
+#     else:
+#         print('cuda not available')
+#         device = torch.device("cpu")
+#     return device
 def gpu_setup(use_gpu, gpu_id):
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-
-    if torch.cuda.is_available() and use_gpu:
-        print('cuda available with GPU:' ,torch.cuda.get_device_name(0))
-        device = torch.device("cuda")
+    
+    if not use_gpu:
+        print('CUDA not requested')
+        return torch.device("cpu")
+    
+    if not torch.cuda.is_available():
+        print('CUDA not available')
+        return torch.device("cpu")
+    
+    # 处理 gpu_id
+    if isinstance(gpu_id, int):
+        gpu_id = [gpu_id]
+    elif gpu_id == 'all':
+        gpu_id = list(range(torch.cuda.device_count()))
+    elif isinstance(gpu_id, list):
+        gpu_id = [id for id in gpu_id if id < torch.cuda.device_count()]
     else:
-        print('cuda not available')
-        device = torch.device("cpu")
-    return device
+        raise ValueError("Invalid gpu_id format. Expected int, 'all', or list of ints.")
+    
+    if not gpu_id:
+        print('No valid GPU IDs, using CPU')
+        return torch.device("cpu")
+    
+    # 设置可见设备
+    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, gpu_id))
+    
+    # 打印可用的 GPU 信息
+    print('CUDA available with GPU(s):')
+    for i, id in enumerate(gpu_id):
+        print(f'  GPU {i}: {torch.cuda.get_device_name(i)}')
+    
+    # 如果只有一个 GPU，返回特定设备；否则返回 'cuda'
+    if len(gpu_id) == 1:
+        return torch.device(f"cuda:{0}")
+    else:
+        return torch.device("cuda")
 
 
 
